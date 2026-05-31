@@ -1,5 +1,9 @@
 # JobForge
 
+<p align="center">
+  <img src="assets/jobforge-poster.png" alt="JobForge — AI-Powered Job Search & Resume Automation Platform" width="100%" />
+</p>
+
 JobForge is a local web app for job searching on LinkedIn, reviewing listings, generating tailored resumes with Claude, and (eventually) automating Easy Apply submissions.
 
 Everything runs on your machine at **http://localhost:7070** — no cloud hosting required.
