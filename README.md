@@ -20,15 +20,6 @@ Everything runs on your machine at **http://localhost:7070** — no cloud hostin
 - **Anthropic API key** (Claude) for resume tailoring
 - **LinkedIn account** for job scanning
 
-### Optional integrations
-
-| Integration | Purpose |
-|---|---|
-| [career-ops](https://github.com/dragonfist630/career-ops) | Tailored resume PDF generation |
-| Auto_job_applier_linkedIn | LinkedIn Easy Apply automation (Phase 5) |
-
-JobForge auto-detects these folders on your Desktop if present.
-
 ## Quick start
 
 ### macOS
