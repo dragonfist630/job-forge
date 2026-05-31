@@ -1,0 +1,570 @@
+{% extends "base.html" %}
+{% block title %}Setup — JobForge{% endblock %}
+
+{% block content %}
+<div class="wizard-wrap">
+  <div class="wizard-header">
+    <h1>Welcome to JobForge</h1>
+    <p class="wizard-sub">Set up once. Search, generate resumes, and apply automatically.</p>
+
+    <!-- Step indicators -->
+    <div class="steps">
+      <div class="step active" data-step="1"><span class="step-num">1</span><span class="step-label">You</span></div>
+      <div class="step-line"></div>
+      <div class="step" data-step="2"><span class="step-num">2</span><span class="step-label">LinkedIn</span></div>
+      <div class="step-line"></div>
+      <div class="step" data-step="3"><span class="step-num">3</span><span class="step-label">Job Search</span></div>
+      <div class="step-line"></div>
+      <div class="step" data-step="4"><span class="step-num">4</span><span class="step-label">Work Details</span></div>
+      <div class="step-line"></div>
+      <div class="step" data-step="5"><span class="step-num">5</span><span class="step-label">API & Paths</span></div>
+    </div>
+  </div>
+
+  <form id="wizard-form" action="{{ url_for('setup.save') }}" method="POST">
+
+    <!-- ─── STEP 1: Personal Info ─── -->
+    <div class="wizard-step active" id="step-1">
+      <h2>About You</h2>
+      <p class="step-desc">This information fills out job application forms automatically.</p>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>First Name <span class="req">*</span></label>
+          <input type="text" name="first_name" value="{{ settings.identity.first_name or '' }}" placeholder="Nayan" required>
+        </div>
+        <div class="form-group">
+          <label>Middle Name</label>
+          <input type="text" name="middle_name" value="{{ settings.identity.middle_name or '' }}" placeholder="Amrut">
+        </div>
+        <div class="form-group">
+          <label>Last Name <span class="req">*</span></label>
+          <input type="text" name="last_name" value="{{ settings.identity.last_name or '' }}" placeholder="Gadhari" required>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Phone Number <span class="req">*</span></label>
+          <input type="tel" name="phone_number" value="{{ settings.identity.phone_number or '' }}" placeholder="07768271808" required>
+        </div>
+        <div class="form-group">
+          <label>Contact Email</label>
+          <input type="email" name="contact_email" value="{{ settings.identity.email or '' }}" placeholder="you@example.com">
+          <span class="hint">Defaults to your LinkedIn email if empty</span>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Country <span class="req">*</span></label>
+          <input type="text" name="country" value="{{ settings.location.country or '' }}" placeholder="United Kingdom" required>
+        </div>
+        <div class="form-group">
+          <label>City</label>
+          <input type="text" name="city" value="{{ settings.location.city or '' }}" placeholder="London">
+          <span class="hint">Leave empty — bot fills job location automatically</span>
+        </div>
+      </div>
+
+      <h3>Online Presence</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>LinkedIn Profile URL</label>
+          <input type="url" name="linkedin_profile_url" value="{{ settings.online_presence.linkedin or '' }}" placeholder="https://linkedin.com/in/yourname">
+        </div>
+        <div class="form-group">
+          <label>GitHub URL</label>
+          <input type="url" name="github_url" value="{{ settings.online_presence.github or '' }}" placeholder="https://github.com/yourname">
+        </div>
+        <div class="form-group">
+          <label>Portfolio / Website</label>
+          <input type="url" name="portfolio_url" value="{{ settings.online_presence.portfolio or '' }}" placeholder="https://yoursite.com">
+        </div>
+      </div>
+
+      <h3>Professional Summary</h3>
+      <div class="form-group">
+        <label>Headline</label>
+        <input type="text" name="headline" value="{{ settings.professional_summary.headline or '' }}" placeholder="Full-Stack Engineer | React · Node.js · TypeScript">
+      </div>
+      <div class="form-group">
+        <label>Summary</label>
+        <textarea name="summary" rows="4" placeholder="2-3 sentences about your experience and specialisation...">{{ settings.professional_summary.summary or '' }}</textarea>
+      </div>
+
+      <div class="wizard-nav">
+        <div></div>
+        <button type="button" class="btn btn-primary" onclick="nextStep(1)">Next →</button>
+      </div>
+    </div>
+
+    <!-- ─── STEP 2: LinkedIn Credentials ─── -->
+    <div class="wizard-step" id="step-2">
+      <h2>LinkedIn Login</h2>
+      <p class="step-desc">Used only on your device to log in and search jobs. Never sent anywhere.</p>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>LinkedIn Email <span class="req">*</span></label>
+          <input type="email" name="linkedin_email" value="{{ settings.linkedin.email or '' }}" placeholder="you@example.com" required>
+        </div>
+        <div class="form-group">
+          <label>LinkedIn Password <span class="req">*</span></label>
+          <input type="password" name="linkedin_password" value="{{ settings.linkedin.password or '' }}" required>
+        </div>
+      </div>
+
+      <div class="info-box">
+        <strong>Privacy note:</strong> Credentials are stored only in <code>config/settings.yaml</code> on your device.
+        JobForge uses them to open a real Chrome browser session on your machine — nothing is sent to any server.
+      </div>
+
+      <div class="wizard-nav">
+        <button type="button" class="btn btn-secondary" onclick="prevStep(2)">← Back</button>
+        <button type="button" class="btn btn-primary" onclick="nextStep(2)">Next →</button>
+      </div>
+    </div>
+
+    <!-- ─── STEP 3: Job Search ─── -->
+    <div class="wizard-step" id="step-3">
+      <h2>What Are You Looking For?</h2>
+      <p class="step-desc">These settings control what LinkedIn searches and which jobs get scraped.</p>
+
+      <div class="form-group">
+        <label>Job Search Terms <span class="req">*</span></label>
+        <textarea name="search_terms" rows="5" placeholder="Software Developer&#10;Frontend Engineer&#10;React Developer&#10;Full Stack Developer" required>{{ '\n'.join(settings.job_search.search_terms) if settings.job_search and settings.job_search.search_terms else '' }}</textarea>
+        <span class="hint">One search term per line. The bot rotates through all of them.</span>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Search Location</label>
+          <input type="text" name="search_location" value="{{ settings.job_search.search_location or '' }}" placeholder="United Kingdom">
+        </div>
+        <div class="form-group">
+          <label>Switch After N Applications</label>
+          <input type="number" name="switch_number" value="{{ settings.job_search.switch_number or 30 }}" min="1" max="200">
+          <span class="hint">Move to next search term after this many jobs</span>
+        </div>
+      </div>
+
+      <h3>Filters</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Sort By</label>
+          <select name="sort_by">
+            <option value="Most relevant" {% if settings.job_search and settings.job_search.filters and settings.job_search.filters.sort_by == 'Most relevant' %}selected{% endif %}>Most Relevant</option>
+            <option value="Most recent" {% if settings.job_search and settings.job_search.filters and settings.job_search.filters.sort_by == 'Most recent' %}selected{% endif %}>Most Recent</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Date Posted</label>
+          <select name="date_posted">
+            {% set dp = settings.job_search.filters.date_posted if settings.job_search and settings.job_search.filters else "Past 24 hours" %}
+            <option value="Past 24 hours" {% if dp == "Past 24 hours" %}selected{% endif %}>Past 24 hours</option>
+            <option value="Past week"     {% if dp == "Past week"     %}selected{% endif %}>Past week</option>
+            <option value="Past month"    {% if dp == "Past month"    %}selected{% endif %}>Past month</option>
+            <option value="Any time"      {% if dp == "Any time"      %}selected{% endif %}>Any time</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Job Type</label>
+          <div class="checkbox-group">
+            {% for jt in ['Full-time', 'Part-time', 'Contract', 'Temporary', 'Internship'] %}
+            <label class="checkbox-label">
+              <input type="checkbox" name="job_type" value="{{ jt }}"
+                {% if settings.job_search and settings.job_search.filters and jt in (settings.job_search.filters.job_type or []) %}checked{% endif %}>
+              {{ jt }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="form-group">
+          <label>On-Site / Remote</label>
+          <div class="checkbox-group">
+            {% for ws in ['On-site', 'Remote', 'Hybrid'] %}
+            <label class="checkbox-label">
+              <input type="checkbox" name="on_site" value="{{ ws }}"
+                {% if settings.job_search and settings.job_search.filters and ws in (settings.job_search.filters.on_site or []) %}checked{% endif %}>
+              {{ ws }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Easy Apply Only</label>
+          <select name="easy_apply_only">
+            <option value="true" {% if settings.job_search and settings.job_search.filters and settings.job_search.filters.easy_apply_only %}selected{% endif %}>Yes — Easy Apply only</option>
+            <option value="false">No — include all jobs</option>
+          </select>
+        </div>
+      </div>
+
+      <h3>Screening Rules</h3>
+      <div class="form-group">
+        <label>Skip Jobs Containing These Words</label>
+        <input type="text" name="bad_words" value="{{ ','.join(settings.screening.bad_words) if settings.screening and settings.screening.bad_words else '' }}" placeholder="senior, manager, director">
+        <span class="hint">Comma-separated. Jobs whose description contains these words are skipped.</span>
+      </div>
+
+      <div class="wizard-nav">
+        <button type="button" class="btn btn-secondary" onclick="prevStep(3)">← Back</button>
+        <button type="button" class="btn btn-primary" onclick="nextStep(3)">Next →</button>
+      </div>
+    </div>
+
+    <!-- ─── STEP 4: Work Details ─── -->
+    <div class="wizard-step" id="step-4">
+      <h2>Work Details</h2>
+      <p class="step-desc">Used to answer application questions about experience, salary, and work authorisation.</p>
+
+      <h3>Experience</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Years of Experience</label>
+          <input type="text" name="years_of_experience" value="{{ settings.experience.years_of_experience or '0' }}" placeholder="3">
+        </div>
+        <div class="form-group">
+          <label>Current Experience (integer)</label>
+          <input type="number" name="current_experience" value="{{ settings.experience.current_experience or 0 }}" min="0">
+          <span class="hint">Used for comparing against job requirements</span>
+        </div>
+        <div class="form-group">
+          <label>Hold a Master's Degree?</label>
+          <select name="did_masters">
+            <option value="true" {% if settings.experience and settings.experience.did_masters %}selected{% endif %}>Yes (+2 yr buffer)</option>
+            <option value="false" {% if settings.experience and not settings.experience.did_masters %}selected{% endif %}>No</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Most Recent Employer</label>
+          <input type="text" name="recent_employer" value="{{ settings.experience.recent_employer or '' }}" placeholder="Acme Corp">
+        </div>
+        <div class="form-group">
+          <label>Confidence Level (1–10)</label>
+          <input type="number" name="confidence_level" value="{{ settings.experience.confidence_level or '7' }}" min="1" max="10">
+        </div>
+      </div>
+
+      <h3>Compensation</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Desired Salary (annual)</label>
+          <input type="number" name="desired_salary" value="{{ settings.compensation.desired_salary or 0 }}" placeholder="60000">
+        </div>
+        <div class="form-group">
+          <label>Current CTC (annual)</label>
+          <input type="number" name="current_ctc" value="{{ settings.compensation.current_ctc or 0 }}" placeholder="60000">
+        </div>
+        <div class="form-group">
+          <label>Currency</label>
+          <select name="currency">
+            {% for cur in ['GBP', 'USD', 'EUR', 'INR', 'AUD', 'CAD'] %}
+            <option value="{{ cur }}" {% if settings.compensation and settings.compensation.currency == cur %}selected{% endif %}>{{ cur }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Target Range (for resume)</label>
+          <input type="text" name="target_range" value="{{ settings.compensation.target_range or '' }}" placeholder="£50K–70K">
+        </div>
+        <div class="form-group">
+          <label>Minimum (walk-away)</label>
+          <input type="text" name="minimum_salary" value="{{ settings.compensation.minimum or '' }}" placeholder="£45K">
+        </div>
+        <div class="form-group">
+          <label>Notice Period (days)</label>
+          <input type="number" name="notice_period_days" value="{{ settings.notice_period.days or 30 }}" min="0">
+        </div>
+      </div>
+
+      <h3>Work Authorisation</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Need Visa Sponsorship?</label>
+          <select name="require_visa_sponsorship">
+            <option value="Yes" {% if settings.work_authorization and settings.work_authorization.require_visa_sponsorship == 'Yes' %}selected{% endif %}>Yes</option>
+            <option value="No" {% if settings.work_authorization and settings.work_authorization.require_visa_sponsorship == 'No' %}selected{% endif %}>No</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Citizenship Status</label>
+          <select name="us_citizenship">
+            <option value="Non-citizen allowed to work for any employer">Non-citizen (any employer)</option>
+            <option value="U.S. Citizen/Permanent Resident">U.S. Citizen / PR</option>
+            <option value="Canadian Citizen/Permanent Resident">Canadian Citizen / PR</option>
+            <option value="Non-citizen seeking work authorization">Seeking work authorization</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </div>
+
+      <h3>Equal Opportunity (all default to "Decline")</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Ethnicity</label>
+          <select name="ethnicity">
+            {% for opt in ['Decline', 'Hispanic/Latino', 'Asian', 'Black or African American', 'White', 'Other'] %}
+            <option value="{{ opt }}" {% if settings.equal_opportunity and settings.equal_opportunity.ethnicity == opt %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Gender</label>
+          <select name="gender">
+            {% for opt in ['Decline', 'Male', 'Female', 'Other'] %}
+            <option value="{{ opt }}" {% if settings.equal_opportunity and settings.equal_opportunity.gender == opt %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Disability Status</label>
+          <select name="disability_status">
+            {% for opt in ['Decline', 'Yes', 'No'] %}
+            <option value="{{ opt }}" {% if settings.equal_opportunity and settings.equal_opportunity.disability_status == opt %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Veteran Status</label>
+          <select name="veteran_status">
+            {% for opt in ['Decline', 'Yes', 'No'] %}
+            <option value="{{ opt }}" {% if settings.equal_opportunity and settings.equal_opportunity.veteran_status == opt %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="wizard-nav">
+        <button type="button" class="btn btn-secondary" onclick="prevStep(4)">← Back</button>
+        <button type="button" class="btn btn-primary" onclick="nextStep(4)">Next →</button>
+      </div>
+    </div>
+
+    <!-- ─── STEP 5: API Keys & Paths ─── -->
+    <div class="wizard-step" id="step-5">
+      <h2>API Keys & Paths</h2>
+      <p class="step-desc">Claude API is required to generate tailored resumes. Paths are auto-detected.</p>
+
+      <h3>Claude API Key <span class="req">*</span></h3>
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="password" name="claude_api_key" value="{{ settings.api_keys.claude or '' }}" placeholder="sk-ant-..." required>
+        <span class="hint">Get your key at <strong>console.anthropic.com</strong> → API Keys</span>
+      </div>
+
+      <div class="form-group">
+        <label>AI Provider for Form Answers</label>
+        <select name="ai_provider">
+          {% for p in ['claude', 'openai', 'gemini', 'deepseek'] %}
+          <option value="{{ p }}" {% if settings.api_keys and settings.api_keys.ai_provider == p %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+        <span class="hint">Used by the LinkedIn applier to answer form questions. Claude is recommended.</span>
+      </div>
+
+      <div id="other-api-keys" style="display:none;">
+        <div class="form-row">
+          <div class="form-group">
+            <label>OpenAI Key</label>
+            <input type="password" name="openai_api_key" value="{{ settings.api_keys.openai or '' }}" placeholder="sk-...">
+          </div>
+          <div class="form-group">
+            <label>Gemini Key</label>
+            <input type="password" name="gemini_api_key" value="{{ settings.api_keys.gemini or '' }}" placeholder="AIza...">
+          </div>
+        </div>
+      </div>
+
+      <h3>Project Paths</h3>
+      <div class="info-box">
+        Auto-detected paths are shown below. Edit only if JobForge found the wrong location.
+      </div>
+
+      <div class="form-group">
+        <label>career-ops folder</label>
+        <input type="text" name="career_ops_path" value="{{ settings.paths.career_ops or '' }}" placeholder="/Users/you/Desktop/career-ops">
+        <span class="status-dot" id="dot-career-ops"></span>
+      </div>
+      <div class="form-group">
+        <label>Auto_job_applier_linkedIn folder</label>
+        <input type="text" name="linkedin_applier_path" value="{{ settings.paths.linkedin_applier or '' }}" placeholder="/Users/you/Desktop/Auto_job_applier_linkedIn">
+        <span class="status-dot" id="dot-linkedin"></span>
+      </div>
+      <div class="form-group">
+        <label>Node.js binary path</label>
+        <input type="text" name="node_bin_path" value="{{ settings.paths.node_bin or '' }}" placeholder="/usr/local/bin/node">
+        <span class="status-dot" id="dot-node"></span>
+      </div>
+
+      <!-- Health check summary -->
+      <div class="health-grid" id="health-grid">
+        <div class="health-item" id="h-career-ops">⏳ career-ops</div>
+        <div class="health-item" id="h-cv">⏳ cv.md</div>
+        <div class="health-item" id="h-linkedin">⏳ LinkedIn applier</div>
+        <div class="health-item" id="h-node">⏳ Node.js</div>
+        <div class="health-item" id="h-anthropic">⏳ anthropic SDK</div>
+        <div class="health-item" id="h-selenium">⏳ selenium</div>
+      </div>
+      <button type="button" class="btn btn-secondary" onclick="runHealthCheck()" style="margin-top:12px">
+        Run Health Check
+      </button>
+
+      <h3>Bot Behaviour</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Run Chrome in Background?</label>
+          <select name="run_in_background">
+            <option value="false">No — I want to see Chrome</option>
+            <option value="true">Yes — run hidden</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Pause Before Applying?</label>
+          <select name="pause_before_apply">
+            <option value="true" selected>Yes — always ask me first</option>
+            <option value="false">No — apply automatically</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Click Delay (seconds)</label>
+          <input type="number" name="click_gap" value="{{ settings.app.click_gap or 2 }}" min="0" max="10">
+        </div>
+      </div>
+
+      <div id="save-error" class="error-box" style="display:none;"></div>
+
+      <div class="wizard-nav">
+        <button type="button" class="btn btn-secondary" onclick="prevStep(5)">← Back</button>
+        <button type="button" class="btn btn-primary" id="save-btn" onclick="saveSettings()">
+          Save & Continue →
+        </button>
+      </div>
+    </div>
+
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ─── Step navigation ───────────────────────
+let currentStep = 1;
+const totalSteps = 5;
+
+function showStep(n) {
+  document.querySelectorAll('.wizard-step').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.step').forEach(el => el.classList.remove('active', 'done'));
+  document.getElementById('step-' + n).classList.add('active');
+  for (let i = 1; i <= totalSteps; i++) {
+    const dot = document.querySelector('[data-step="' + i + '"]');
+    if (i < n) dot.classList.add('done');
+    else if (i === n) dot.classList.add('active');
+  }
+  currentStep = n;
+  window.scrollTo(0, 0);
+}
+
+function nextStep(from) { if (from < totalSteps) showStep(from + 1); }
+function prevStep(from) { if (from > 1) showStep(from - 1); }
+
+// ─── Show/hide other API key fields ────────
+document.querySelector('[name="ai_provider"]').addEventListener('change', function() {
+  document.getElementById('other-api-keys').style.display =
+    this.value !== 'claude' ? 'block' : 'none';
+});
+
+// ─── Health check ───────────────────────────
+function runHealthCheck() {
+  const items = {
+    'h-career-ops': 'career_ops_found',
+    'h-cv':         'cv_md_found',
+    'h-linkedin':   'linkedin_applier_found',
+    'h-node':       'node_found',
+    'h-anthropic':  'anthropic_sdk',
+    'h-selenium':   'selenium',
+  };
+  const labels = {
+    'h-career-ops': 'career-ops',
+    'h-cv':         'cv.md',
+    'h-linkedin':   'LinkedIn applier',
+    'h-node':       'Node.js',
+    'h-anthropic':  'anthropic SDK',
+    'h-selenium':   'selenium',
+  };
+  Object.keys(items).forEach(id => {
+    document.getElementById(id).textContent = '⏳ ' + labels[id];
+    document.getElementById(id).className = 'health-item';
+  });
+  fetch('/setup/health')
+    .then(r => r.json())
+    .then(data => {
+      Object.entries(items).forEach(([id, key]) => {
+        const ok = data[key];
+        const el = document.getElementById(id);
+        el.textContent = (ok ? '✅ ' : '❌ ') + labels[id];
+        if (key === 'node_found' && data['node_version']) {
+          el.textContent += ' (' + data['node_version'] + ')';
+        }
+        el.className = 'health-item ' + (ok ? 'health-ok' : 'health-fail');
+      });
+    })
+    .catch(() => {
+      Object.keys(items).forEach(id => {
+        document.getElementById(id).textContent = '❌ ' + labels[id];
+        document.getElementById(id).className = 'health-item health-fail';
+      });
+    });
+}
+
+// ─── Save settings ──────────────────────────
+function saveSettings() {
+  const btn = document.getElementById('save-btn');
+  const errBox = document.getElementById('save-error');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  errBox.style.display = 'none';
+
+  const formData = new FormData(document.getElementById('wizard-form'));
+
+  fetch('/setup/save', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        window.location.href = data.redirect;
+      } else {
+        errBox.textContent = 'Errors:\n' + data.errors.join('\n');
+        errBox.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Save & Continue →';
+      }
+    })
+    .catch(() => {
+      errBox.textContent = 'Network error — is JobForge running?';
+      errBox.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Save & Continue →';
+    });
+}
+
+// Run health check on load when on step 5
+window.addEventListener('DOMContentLoaded', () => {
+  {% if not health.career_ops_found or not health.node_found %}
+  // Auto-run check only when on step 5
+  {% endif %}
+});
+</script>
+{% endblock %}

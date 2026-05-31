@@ -1,0 +1,25 @@
+╔══════════════════════════════════════════╗
+║         How to start JobForge           ║
+╚══════════════════════════════════════════╝
+
+macOS:
+  1. Right-click "JobForge.command"
+  2. Click "Open"
+  3. Click "Open" again in the security popup
+     (only needed the very first time)
+  4. A Terminal window opens and sets everything up.
+     Your browser opens automatically when it's ready.
+
+  Next time: just double-click JobForge.command
+
+Windows:
+  1. Double-click "JobForge.bat"
+  2. If Windows Defender pops up, click "More info" → "Run anyway"
+     (only needed the very first time)
+  3. A window opens and sets everything up.
+     Your browser opens automatically when it's ready.
+
+  Next time: just double-click JobForge.bat
+
+──────────────────────────────────────────
+Need help? The app runs at http://localhost:7070

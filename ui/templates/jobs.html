@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+{% block title %}Jobs — JobForge{% endblock %}
+
+{% block content %}
+<div class="jobs-wrap">
+  <div class="jobs-header">
+    <div>
+      <h1>Job Results</h1>
+      <p class="sub" id="jobs-count">
+        {% if jobs %}{{ jobs|length }} job{{ 's' if jobs|length != 1 }} found{% else %}No jobs yet{% endif %}
+      </p>
+    </div>
+    <div class="jobs-header-actions">
+      <button class="btn btn-secondary" id="btn-scan" onclick="startScan()">
+        {% if scanning %}Stop Scan{% else %}Start Scan{% endif %}
+      </button>
+      <button class="btn btn-primary" id="btn-approve" onclick="saveApprovals()" {% if not jobs %}disabled{% endif %}>
+        Save Approvals
+      </button>
+      <a href="/dashboard/generate" class="btn btn-primary" id="btn-generate" {% if not jobs %}style="display:none"{% endif %}>
+        Generate Resumes →
+      </a>
+    </div>
+  </div>
+
+  <!-- Progress bar while scanning -->
+  <div id="scan-progress" style="display:none;" class="scan-progress">
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+    <p id="progress-msg">Starting scan...</p>
+  </div>
+
+  <!-- Approval actions bar -->
+  {% if jobs %}
+  <div class="approval-bar">
+    <label><input type="checkbox" id="select-all" onchange="toggleAll(this)"> Select all</label>
+    <span id="selected-count">0 selected</span>
+    <span class="approved-label">
+      {% set approved_count = jobs | selectattr("job_id", "in", approved) | list | length %}
+      {{ approved_count }} approved
+    </span>
+  </div>
+  {% endif %}
+
+  <!-- Job list grouped by scan session -->
+  <div class="job-list" id="job-list">
+    {% if grouped_jobs %}
+      {% for group in grouped_jobs %}
+      <div class="scan-section" id="section-{{ group.session.replace(':', '-') }}">
+        <div class="scan-section-header">{{ group.label }}</div>
+        <div class="scan-section-jobs" id="sectionjobs-{{ group.session.replace(':', '-') }}">
+          {% for job in group.jobs %}
+          <div class="job-card {% if job.job_id in approved %}approved{% endif %}" id="card-{{ job.job_id }}">
+            <div class="job-card-top">
+              <input type="checkbox" class="job-check" value="{{ job.job_id }}"
+                     {% if job.job_id in approved %}checked{% endif %}
+                     onchange="updateCount()">
+              <div class="job-info">
+                <h3 class="job-title">{{ job.title }}</h3>
+                <p class="job-company">{{ job.company }} — <span class="job-location">{{ job.work_location }}</span>
+                  {% if job.work_style %}<span class="badge">{{ job.work_style }}</span>{% endif %}
+                  {% if job.visa_sponsored %}<span class="badge badge-visa">Visa Sponsor</span>{% endif %}
+                </p>
+                {% if job.experience_required and job.experience_required != 'Unknown' %}
+                <p class="job-exp">{{ job.experience_required }} yrs exp</p>
+                {% endif %}
+              </div>
+              <a href="{{ job.job_link }}" target="_blank" class="btn btn-sm">View Job ↗</a>
+              <button class="btn btn-sm btn-danger" onclick="deleteJob('{{ job.job_id }}', this)">Delete</button>
+            </div>
+            <div class="job-desc-wrap">
+              <button class="toggle-desc" onclick="toggleDesc('{{ job.job_id }}')">Show description</button>
+              <div class="job-desc" id="desc-{{ job.job_id }}" style="display:none">
+                <pre>{{ job.job_description }}</pre>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+    <div class="empty-state" id="empty-state">
+      <p>No jobs yet. Click <strong>Start Scan</strong> to search LinkedIn.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let scanning = {{ 'true' if scanning else 'false' }};
+let eventSource = null;
+
+// Pre-populate section map from server-rendered sections
+const sessionSections = {};
+document.querySelectorAll('.scan-section').forEach(sec => {
+  const rawId = sec.id.replace('section-', '');
+  const inner = sec.querySelector('.scan-section-jobs');
+  if (inner) sessionSections[rawId] = inner;
+});
+
+function sanitizeSession(s) {
+  return s ? s.replace(/:/g, '-') : 'unknown';
+}
+
+function formatSession(session) {
+  if (!session) return 'Previous scans';
+  const dt = new Date(session);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const pad = n => String(n).padStart(2, '0');
+  const time = `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+  if (dt.toDateString() === today.toDateString()) return `Today — ${time}`;
+  if (dt.toDateString() === yesterday.toDateString()) return `Yesterday — ${time}`;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[dt.getMonth()]} ${dt.getDate()} — ${time}`;
+}
+
+function getOrCreateSection(scanSession, label) {
+  const safeId = sanitizeSession(scanSession);
+  if (sessionSections[safeId]) return sessionSections[safeId];
+
+  const section = document.createElement('div');
+  section.className = 'scan-section';
+  section.id = 'section-' + safeId;
+  section.innerHTML =
+    `<div class="scan-section-header">${label}</div>` +
+    `<div class="scan-section-jobs" id="sectionjobs-${safeId}"></div>`;
+
+  const list = document.getElementById('job-list');
+  const empty = document.getElementById('empty-state');
+  if (empty) empty.remove();
+  list.insertBefore(section, list.firstChild);
+
+  const inner = section.querySelector('.scan-section-jobs');
+  sessionSections[safeId] = inner;
+  return inner;
+}
+
+function startScan() {
+  if (scanning) {
+    stopScan();
+    return;
+  }
+  const btn = document.getElementById('btn-scan');
+  btn.textContent = 'Stop Scan';
+  scanning = true;
+
+  document.getElementById('scan-progress').style.display = 'block';
+  document.getElementById('progress-msg').textContent = 'Connecting...';
+
+  eventSource = new EventSource('/dashboard/api/scan/start');
+
+  eventSource.onmessage = function(e) {
+    const obj = JSON.parse(e.data);
+    if (obj.type === 'progress') {
+      document.getElementById('progress-msg').textContent = obj.msg;
+    } else if (obj.type === 'job') {
+      appendJob(obj);
+      const count = document.querySelectorAll('.job-card').length;
+      document.getElementById('jobs-count').textContent = `${count} job${count !== 1 ? 's' : ''} found`;
+    } else if (obj.type === 'done') {
+      onScanDone(`Scan complete — ${obj.count} jobs found`);
+    } else if (obj.type === 'error') {
+      document.getElementById('progress-msg').textContent = 'Error: ' + obj.msg;
+      onScanDone('Scan failed');
+    }
+  };
+
+  eventSource.onerror = function() {
+    onScanDone('Connection lost');
+  };
+}
+
+function stopScan() {
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  fetch('/dashboard/api/scan/stop', {method:'POST'});
+  onScanDone('Scan stopped');
+}
+
+function onScanDone(msg) {
+  scanning = false;
+  const btn = document.getElementById('btn-scan');
+  btn.textContent = 'Start Scan';
+  document.getElementById('progress-msg').textContent = msg;
+  setTimeout(() => {
+    document.getElementById('scan-progress').style.display = 'none';
+  }, 3000);
+  if (eventSource) { eventSource.close(); eventSource = null; }
+}
+
+function appendJob(job) {
+  const label = formatSession(job.scan_session);
+  const container = getOrCreateSection(job.scan_session, label);
+
+  const div = document.createElement('div');
+  div.className = 'job-card';
+  div.id = 'card-' + job.job_id;
+
+  const badge = job.work_style ? `<span class="badge">${job.work_style}</span>` : '';
+  const visaBadge = job.visa_sponsored ? `<span class="badge badge-visa">Visa Sponsor</span>` : '';
+  const exp = (job.experience_required && job.experience_required !== 'Unknown')
+    ? `<p class="job-exp">${job.experience_required} yrs exp</p>` : '';
+
+  div.innerHTML = `
+    <div class="job-card-top">
+      <input type="checkbox" class="job-check" value="${job.job_id}" onchange="updateCount()">
+      <div class="job-info">
+        <h3 class="job-title">${job.title}</h3>
+        <p class="job-company">${job.company} — <span class="job-location">${job.work_location}</span> ${badge}${visaBadge}</p>
+        ${exp}
+      </div>
+      <a href="${job.job_link}" target="_blank" class="btn btn-sm">View Job ↗</a>
+      <button class="btn btn-sm btn-danger" onclick="deleteJob('${job.job_id}', this)">Delete</button>
+    </div>
+    <div class="job-desc-wrap">
+      <button class="toggle-desc" onclick="toggleDesc('${job.job_id}')">Show description</button>
+      <div class="job-desc" id="desc-${job.job_id}" style="display:none">
+        <pre>${escapeHtml(job.job_description)}</pre>
+      </div>
+    </div>`;
+
+  container.appendChild(div);
+  updateCount();
+
+  const approveBtn = document.getElementById('btn-approve');
+  if (approveBtn) approveBtn.disabled = false;
+}
+
+function toggleDesc(jobId) {
+  const desc = document.getElementById('desc-' + jobId);
+  const btn = desc.previousElementSibling;
+  if (desc.style.display === 'none') {
+    desc.style.display = 'block';
+    btn.textContent = 'Hide description';
+  } else {
+    desc.style.display = 'none';
+    btn.textContent = 'Show description';
+  }
+}
+
+function toggleAll(cb) {
+  document.querySelectorAll('.job-check').forEach(c => { c.checked = cb.checked; });
+  updateCount();
+}
+
+function updateCount() {
+  const checked = document.querySelectorAll('.job-check:checked').length;
+  const el = document.getElementById('selected-count');
+  if (el) el.textContent = `${checked} selected`;
+
+  document.querySelectorAll('.job-check').forEach(cb => {
+    const card = cb.closest('.job-card');
+    if (card) card.classList.toggle('approved', cb.checked);
+  });
+}
+
+function saveApprovals() {
+  const ids = Array.from(document.querySelectorAll('.job-check:checked')).map(c => c.value);
+  fetch('/dashboard/api/jobs/approve', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({job_ids: ids})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.ok) {
+      const genBtn = document.getElementById('btn-generate');
+      if (genBtn) genBtn.style.display = '';
+      alert(`${d.approved} job${d.approved !== 1 ? 's' : ''} approved. Click "Generate Resumes" to continue.`);
+    }
+  });
+}
+
+function deleteJob(jobId, btn) {
+  if (!confirm('Remove this job from the list?')) return;
+  fetch(`/dashboard/api/jobs/${jobId}/delete`, {method: 'POST'})
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        const card = document.getElementById('card-' + jobId);
+        if (card) {
+          const section = card.closest('.scan-section');
+          card.remove();
+          // Remove section header if no more jobs in it
+          if (section && section.querySelectorAll('.job-card').length === 0) {
+            section.remove();
+          }
+        }
+        const remaining = document.querySelectorAll('.job-card').length;
+        document.getElementById('jobs-count').textContent =
+          remaining + ' job' + (remaining !== 1 ? 's' : '') + ' found';
+        updateCount();
+      }
+    });
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+</script>
+{% endblock %}

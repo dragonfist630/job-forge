@@ -1,0 +1,81 @@
+api_keys:
+  claude: ''
+  ai_provider: claude
+  openai: ''
+  gemini: ''
+  deepseek: ''
+linkedin:
+  email: ''
+  password: ''
+identity:
+  first_name: ''
+  middle_name: ''
+  last_name: ''
+  phone_number: ''
+  email: ''
+location:
+  country: ''
+  city: ''
+  street: ''
+  state: ''
+  zipcode: ''
+work_authorization:
+  require_visa_sponsorship: ''
+  us_citizenship: ''
+equal_opportunity:
+  ethnicity: Decline
+  gender: Decline
+  disability_status: Decline
+  veteran_status: Decline
+experience:
+  years_of_experience: ''
+  current_experience: 0
+  did_masters: false
+  recent_employer: ''
+  confidence_level: '5'
+compensation:
+  desired_salary: 0
+  current_ctc: 0
+  currency: GBP
+  target_range: ''
+  minimum: ''
+notice_period:
+  days: 30
+online_presence:
+  linkedin: ''
+  github: ''
+  portfolio: ''
+professional_summary:
+  headline: ''
+  summary: ''
+job_search:
+  search_terms:
+  - Software Developer
+  search_location: United Kingdom
+  switch_number: 30
+  filters:
+    sort_by: Most relevant
+    date_posted: Past 24 hours
+    salary: ''
+    easy_apply_only: true
+    experience_level: []
+    job_type:
+    - Full-time
+    on_site:
+    - On-site
+    - Remote
+    - Hybrid
+screening:
+  bad_words: []
+  security_clearance: false
+  max_experience_gap: 2
+paths:
+  career_ops: ''
+  linkedin_applier: ''
+  node_bin: ''
+app:
+  port: 7070
+  auto_open_browser: true
+  run_in_background: false
+  click_gap: 2
+  pause_before_apply: true

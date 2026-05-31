@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}JobForge{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-brand">
+      <span class="nav-icon">⚙</span>
+      <span class="nav-title">JobForge</span>
+    </div>
+    <div class="nav-links">
+      <a href="{{ url_for('dashboard.home') }}" class="nav-link">Dashboard</a>
+      <a href="{{ url_for('dashboard.jobs') }}" class="nav-link">Jobs</a>
+      <a href="{{ url_for('dashboard.generate') }}" class="nav-link">Resumes</a>
+      <a href="{{ url_for('dashboard.apply_page') }}" class="nav-link">Apply</a>
+      <a href="{{ url_for('setup.wizard') }}" class="nav-link">Settings</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

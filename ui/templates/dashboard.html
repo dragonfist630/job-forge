@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — JobForge{% endblock %}
+
+{% block content %}
+<div class="dashboard-wrap">
+  <div class="dashboard-header">
+    <h1>JobForge Dashboard</h1>
+    <p class="dashboard-sub">Search LinkedIn → review jobs → generate tailored resumes → apply.</p>
+  </div>
+
+  <div class="action-cards">
+    <div class="card">
+      <div class="card-icon">🔍</div>
+      <h3>Search LinkedIn</h3>
+      <p>Scrape LinkedIn jobs based on your search terms and filters. Returns a list of matching jobs for you to review.</p>
+      <a href="/dashboard/jobs" class="btn btn-primary">Search Jobs</a>
+    </div>
+
+    <div class="card">
+      <div class="card-icon">📄</div>
+      <h3>Generate Resumes</h3>
+      <p>For each approved job, JobForge uses Claude to tailor your CV and generates a PDF resume.</p>
+      <a href="/dashboard/generate" class="btn btn-primary">Generate Resumes</a>
+    </div>
+
+    <div class="card">
+      <div class="card-icon">🚀</div>
+      <h3>Auto Apply</h3>
+      <p>Uses your tailored resumes to apply on LinkedIn Easy Apply. You approve each application before it's sent.</p>
+      <a href="/dashboard/apply" class="btn btn-primary">Auto Apply</a>
+    </div>
+  </div>
+
+  <div class="status-bar" id="status-bar" style="display:none;">
+    <span id="status-text">Ready</span>
+    <div class="spinner" id="spinner"></div>
+  </div>
+
+</div>
+{% endblock %}

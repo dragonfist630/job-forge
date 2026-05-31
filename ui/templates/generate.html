@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}Generate Resumes — JobForge{% endblock %}
+
+{% block content %}
+<div class="generate-wrap">
+  <div class="generate-header">
+    <div>
+      <h1>Generate Resumes</h1>
+      <p class="sub">{{ jobs|length }} approved job{{ 's' if jobs|length != 1 else '' }} — Claude will tailor your CV for each one.</p>
+    </div>
+    <div class="generate-header-actions">
+      <a href="/dashboard/jobs" class="btn btn-secondary">← Back to Jobs</a>
+      <button class="btn btn-primary" id="btn-generate" onclick="startGenerate()"
+              {% if not jobs %}disabled{% endif %}>
+        Generate All Resumes
+      </button>
+    </div>
+  </div>
+
+  {% if not jobs %}
+  <div class="empty-state">
+    <p>No approved jobs. <a href="/dashboard/jobs">Go back and approve some jobs</a> first.</p>
+  </div>
+  {% else %}
+
+  <!-- Progress -->
+  <div id="gen-progress" style="display:none;" class="scan-progress">
+    <div class="progress-bar">
+      <div class="progress-fill" id="gen-fill" style="width:0%; animation:none; transition: width .4s;"></div>
+    </div>
+    <p id="gen-msg">Starting...</p>
+  </div>
+
+  <!-- Job cards -->
+  <div class="resume-list" id="resume-list">
+    {% for job in jobs %}
+    {% set resume_ready = job.job_id in resumes %}
+    <div class="resume-card" id="rcard-{{ job.job_id }}">
+      <div class="resume-card-left">
+        <div class="resume-status" id="status-{{ job.job_id }}">
+          {% if resume_ready %}
+          <span class="status-done">✓</span>
+          {% else %}
+          <span class="status-pending">—</span>
+          {% endif %}
+        </div>
+        <div class="resume-info">
+          <h3>{{ job.title }}</h3>
+          <p class="resume-company">{{ job.company }} — {{ job.work_location }}</p>
+        </div>
+      </div>
+      <div class="resume-card-right">
+        {% if resume_ready %}
+        <a href="/dashboard/api/resumes/{{ job.job_id }}/download" class="btn btn-sm" id="dl-{{ job.job_id }}">
+          Download PDF
+        </a>
+        {% else %}
+        <span class="btn btn-sm btn-ghost" id="dl-{{ job.job_id }}">Pending</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if resumes %}
+  <div class="generate-footer">
+    <p>{{ resumes|length }} resume{{ 's' if resumes|length != 1 else '' }} ready.</p>
+    <a href="/dashboard/apply" class="btn btn-primary">Auto Apply →</a>
+  </div>
+  {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let total = {{ jobs|length }};
+let done = 0;
+
+function startGenerate() {
+  const btn = document.getElementById('btn-generate');
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+
+  document.getElementById('gen-progress').style.display = 'block';
+  document.getElementById('gen-msg').textContent = 'Connecting to Claude...';
+
+  const es = new EventSource('/dashboard/api/generate/start');
+
+  es.onmessage = function(e) {
+    const obj = JSON.parse(e.data);
+
+    if (obj.type === 'start') {
+      total = obj.total;
+      setProgress(0, `Starting — ${total} resume${total !== 1 ? 's' : ''} to generate`);
+
+    } else if (obj.type === 'progress') {
+      setStatus(obj.job_id, 'working', '...');
+      document.getElementById('gen-msg').textContent = obj.msg;
+
+    } else if (obj.type === 'done_job') {
+      done++;
+      const pct = Math.round((done / total) * 100);
+      setProgress(pct, `${done}/${total} done`);
+
+      if (obj.ok) {
+        setStatus(obj.job_id, 'done', '✓');
+        makeDlLink(obj.job_id);
+      } else {
+        setStatus(obj.job_id, 'error', '✗');
+        showError(obj.job_id, obj.error || 'Unknown error');
+      }
+
+    } else if (obj.type === 'complete') {
+      es.close();
+      setProgress(100, `Complete — ${obj.succeeded}/${obj.total} resumes generated`);
+      btn.disabled = false;
+      btn.textContent = 'Regenerate All';
+
+      if (obj.succeeded > 0) {
+        const footer = document.querySelector('.generate-footer');
+        if (!footer) {
+          const f = document.createElement('div');
+          f.className = 'generate-footer';
+          f.innerHTML = `<p>${obj.succeeded} resume${obj.succeeded !== 1 ? 's' : ''} ready.</p>
+            <a href="/dashboard/apply" class="btn btn-primary">Auto Apply →</a>`;
+          document.querySelector('.generate-wrap').appendChild(f);
+        }
+      }
+
+    } else if (obj.type === 'error') {
+      es.close();
+      document.getElementById('gen-msg').textContent = 'Error: ' + obj.msg;
+      btn.disabled = false;
+      btn.textContent = 'Retry';
+    }
+  };
+
+  es.onerror = function() {
+    es.close();
+    document.getElementById('gen-msg').textContent = 'Connection lost.';
+    btn.disabled = false;
+    btn.textContent = 'Retry';
+  };
+}
+
+function setProgress(pct, msg) {
+  document.getElementById('gen-fill').style.width = pct + '%';
+  document.getElementById('gen-msg').textContent = msg;
+}
+
+function setStatus(jobId, state, icon) {
+  const el = document.getElementById('status-' + jobId);
+  if (!el) return;
+  el.innerHTML = `<span class="status-${state}">${icon}</span>`;
+  const card = document.getElementById('rcard-' + jobId);
+  if (card) {
+    card.classList.remove('card-working', 'card-done', 'card-error');
+    card.classList.add('card-' + state);
+  }
+}
+
+function makeDlLink(jobId) {
+  const el = document.getElementById('dl-' + jobId);
+  if (!el) return;
+  const a = document.createElement('a');
+  a.href = `/dashboard/api/resumes/${jobId}/download`;
+  a.className = 'btn btn-sm';
+  a.textContent = 'Download PDF';
+  el.replaceWith(a);
+}
+
+function showError(jobId, msg) {
+  // Replace "Pending" button with an error label
+  const el = document.getElementById('dl-' + jobId);
+  if (el) {
+    el.textContent = 'Failed';
+    el.className = 'btn btn-sm btn-ghost';
+  }
+  // Inject error message below the card
+  const card = document.getElementById('rcard-' + jobId);
+  if (!card) return;
+  let errEl = card.querySelector('.gen-error');
+  if (!errEl) {
+    errEl = document.createElement('div');
+    errEl.className = 'gen-error';
+    card.appendChild(errEl);
+  }
+  errEl.textContent = msg;
+}
+</script>
+{% endblock %}

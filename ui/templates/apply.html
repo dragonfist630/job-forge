@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Auto Apply — JobForge{% endblock %}
+
+{% block content %}
+<div class="generate-wrap">
+  <div class="generate-header">
+    <div>
+      <h1>Auto Apply</h1>
+      <p class="sub">{{ queue|length }} job{{ 's' if queue|length != 1 else '' }} ready — LinkedIn Easy Apply with your tailored resumes.</p>
+    </div>
+    <div class="generate-header-actions">
+      <a href="/dashboard/generate" class="btn btn-secondary">← Back</a>
+      <button class="btn btn-primary" disabled title="Coming in Phase 5">
+        Start Auto Apply (soon)
+      </button>
+    </div>
+  </div>
+
+  <div class="coming-soon-banner">
+    <strong>Phase 5 — Coming Soon</strong><br>
+    Auto-apply will use Selenium to open LinkedIn, upload your tailored PDF, and fill Easy Apply forms.
+    You approve each submission before it goes through.
+  </div>
+
+  {% if queue %}
+  <div class="resume-list">
+    {% for job in queue %}
+    <div class="resume-card card-done">
+      <div class="resume-card-left">
+        <div class="resume-status"><span class="status-done">✓</span></div>
+        <div class="resume-info">
+          <h3>{{ job.title }}</h3>
+          <p class="resume-company">{{ job.company }} — {{ job.work_location }}</p>
+        </div>
+      </div>
+      <div class="resume-card-right">
+        <a href="{{ job.job_link }}" target="_blank" class="btn btn-sm">View Job ↗</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <p>No resumes generated yet. <a href="/dashboard/generate">Generate resumes first.</a></p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
