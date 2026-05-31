@@ -9,44 +9,121 @@
 
     <!-- Step indicators -->
     <div class="steps">
-      <div class="step active" data-step="1"><span class="step-num">1</span><span class="step-label">You</span></div>
+      <div class="step active" data-step="1"><span class="step-num">1</span><span class="step-label">Your CV</span></div>
       <div class="step-line"></div>
-      <div class="step" data-step="2"><span class="step-num">2</span><span class="step-label">LinkedIn</span></div>
+      <div class="step" data-step="2"><span class="step-num">2</span><span class="step-label">Roles</span></div>
       <div class="step-line"></div>
-      <div class="step" data-step="3"><span class="step-num">3</span><span class="step-label">Job Search</span></div>
+      <div class="step" data-step="3"><span class="step-num">3</span><span class="step-label">You</span></div>
       <div class="step-line"></div>
-      <div class="step" data-step="4"><span class="step-num">4</span><span class="step-label">Work Details</span></div>
+      <div class="step" data-step="4"><span class="step-num">4</span><span class="step-label">LinkedIn</span></div>
       <div class="step-line"></div>
-      <div class="step" data-step="5"><span class="step-num">5</span><span class="step-label">API & Paths</span></div>
+      <div class="step" data-step="5"><span class="step-num">5</span><span class="step-label">Job Search</span></div>
+      <div class="step-line"></div>
+      <div class="step" data-step="6"><span class="step-num">6</span><span class="step-label">Work Details</span></div>
+      <div class="step-line"></div>
+      <div class="step" data-step="7"><span class="step-num">7</span><span class="step-label">Setup</span></div>
     </div>
   </div>
 
   <form id="wizard-form" action="{{ url_for('setup.save') }}" method="POST">
 
-    <!-- ─── STEP 1: Personal Info ─── -->
+    <!-- ─── STEP 1: Your CV ─── -->
     <div class="wizard-step active" id="step-1">
+      <h2>Your CV</h2>
+      <p class="step-desc">Paste your CV here. JobForge uses it to tailor resumes for each job — nothing leaves your device.</p>
+
+      <div class="form-group">
+        <label>Paste your CV <span class="req">*</span></label>
+        <textarea name="cv_text" id="cv_text" rows="20"
+          placeholder="Paste your full CV here. Plain text is fine — include your experience, skills, education, and any notable achievements.
+
+Example:
+John Smith
+john@email.com | London, UK | github.com/john
+
+EXPERIENCE
+Senior Software Engineer — Acme Corp (2021–present)
+- Built microservices handling 10K req/s using Go and Kubernetes
+- Reduced API latency by 40% through Redis caching
+...
+
+EDUCATION
+BSc Computer Science — University of Manchester (2018)
+
+SKILLS
+Python, Go, TypeScript, React, AWS, Docker, Kubernetes">{{ cv_text or '' }}</textarea>
+        <span class="hint">Include everything: experience, education, skills, projects, achievements. Claude tailors this for each job.</span>
+      </div>
+
+      <div class="wizard-nav">
+        <div></div>
+        <button type="button" class="btn btn-primary" onclick="nextStep(1)">Next →</button>
+      </div>
+    </div>
+
+    <!-- ─── STEP 2: Target Roles ─── -->
+    <div class="wizard-step" id="step-2">
+      <h2>Target Roles</h2>
+      <p class="step-desc">Tell JobForge what you're going for. This shapes how Claude frames your CV for each job.</p>
+
+      <div class="form-group">
+        <label>What roles are you targeting? <span class="req">*</span></label>
+        <textarea name="target_roles" rows="5"
+          placeholder="Software Engineer&#10;Full Stack Developer&#10;Backend Engineer&#10;Platform Engineer">{{ target_roles or '' }}</textarea>
+        <span class="hint">One role per line. Be specific — the more precise, the better the tailoring.</span>
+      </div>
+
+      <div class="form-group">
+        <label>What's your superpower? <span class="req">*</span></label>
+        <textarea name="superpower" rows="3"
+          placeholder="e.g. I'm a backend engineer who's built production systems at scale — I ship fast and own reliability. My edge is combining deep Python expertise with LLM integration experience.">{{ superpower or '' }}</textarea>
+        <span class="hint">Your unique angle — what you do better than other candidates. Claude leads every resume with this.</span>
+      </div>
+
+      <div class="form-group">
+        <label>Work preference</label>
+        <div class="checkbox-group">
+          {% for wp in ['Remote', 'Hybrid', 'On-site'] %}
+          <label class="checkbox-label">
+            <input type="checkbox" name="work_preference" value="{{ wp }}"
+              {% if work_preference and wp in work_preference %}checked{% endif %}>
+            {{ wp }}
+          </label>
+          {% endfor %}
+        </div>
+        <span class="hint">Used to score jobs and frame location sections in resumes.</span>
+      </div>
+
+      <div class="wizard-nav">
+        <button type="button" class="btn btn-secondary" onclick="prevStep(2)">← Back</button>
+        <button type="button" class="btn btn-primary" onclick="nextStep(2)">Next →</button>
+      </div>
+    </div>
+
+    <!-- ─── STEP 3: Personal Info ─── -->
+    <div class="wizard-step" id="step-3">
       <h2>About You</h2>
       <p class="step-desc">This information fills out job application forms automatically.</p>
 
       <div class="form-row">
         <div class="form-group">
           <label>First Name <span class="req">*</span></label>
-          <input type="text" name="first_name" value="{{ settings.identity.first_name or '' }}" placeholder="Nayan" required>
+          <input type="text" name="first_name" value="{{ settings.identity.first_name or '' }}" placeholder="Alex" required>
         </div>
         <div class="form-group">
           <label>Middle Name</label>
-          <input type="text" name="middle_name" value="{{ settings.identity.middle_name or '' }}" placeholder="Amrut">
+          <input type="text" name="middle_name" value="{{ settings.identity.middle_name or '' }}" placeholder="">
         </div>
         <div class="form-group">
           <label>Last Name <span class="req">*</span></label>
-          <input type="text" name="last_name" value="{{ settings.identity.last_name or '' }}" placeholder="Gadhari" required>
+          <input type="text" name="last_name" value="{{ settings.identity.last_name or '' }}" placeholder="Smith" required>
         </div>
       </div>
 
       <div class="form-row">
         <div class="form-group">
           <label>Phone Number <span class="req">*</span></label>
-          <input type="tel" name="phone_number" value="{{ settings.identity.phone_number or '' }}" placeholder="07768271808" required>
+          <input type="tel" name="phone_number" value="{{ settings.identity.phone_number or '' }}" placeholder="+44 7700 900000" required>
         </div>
         <div class="form-group">
           <label>Contact Email</label>
@@ -83,24 +160,14 @@
         </div>
       </div>
 
-      <h3>Professional Summary</h3>
-      <div class="form-group">
-        <label>Headline</label>
-        <input type="text" name="headline" value="{{ settings.professional_summary.headline or '' }}" placeholder="Full-Stack Engineer | React · Node.js · TypeScript">
-      </div>
-      <div class="form-group">
-        <label>Summary</label>
-        <textarea name="summary" rows="4" placeholder="2-3 sentences about your experience and specialisation...">{{ settings.professional_summary.summary or '' }}</textarea>
-      </div>
-
       <div class="wizard-nav">
-        <div></div>
-        <button type="button" class="btn btn-primary" onclick="nextStep(1)">Next →</button>
+        <button type="button" class="btn btn-secondary" onclick="prevStep(3)">← Back</button>
+        <button type="button" class="btn btn-primary" onclick="nextStep(3)">Next →</button>
       </div>
     </div>
 
-    <!-- ─── STEP 2: LinkedIn Credentials ─── -->
-    <div class="wizard-step" id="step-2">
+    <!-- ─── STEP 4: LinkedIn Credentials ─── -->
+    <div class="wizard-step" id="step-4">
       <h2>LinkedIn Login</h2>
       <p class="step-desc">Used only on your device to log in and search jobs. Never sent anywhere.</p>
 
@@ -121,13 +188,13 @@
       </div>
 
       <div class="wizard-nav">
-        <button type="button" class="btn btn-secondary" onclick="prevStep(2)">← Back</button>
-        <button type="button" class="btn btn-primary" onclick="nextStep(2)">Next →</button>
+        <button type="button" class="btn btn-secondary" onclick="prevStep(4)">← Back</button>
+        <button type="button" class="btn btn-primary" onclick="nextStep(4)">Next →</button>
       </div>
     </div>
 
-    <!-- ─── STEP 3: Job Search ─── -->
-    <div class="wizard-step" id="step-3">
+    <!-- ─── STEP 5: Job Search ─── -->
+    <div class="wizard-step" id="step-5">
       <h2>What Are You Looking For?</h2>
       <p class="step-desc">These settings control what LinkedIn searches and which jobs get scraped.</p>
 
@@ -215,13 +282,13 @@
       </div>
 
       <div class="wizard-nav">
-        <button type="button" class="btn btn-secondary" onclick="prevStep(3)">← Back</button>
-        <button type="button" class="btn btn-primary" onclick="nextStep(3)">Next →</button>
+        <button type="button" class="btn btn-secondary" onclick="prevStep(5)">← Back</button>
+        <button type="button" class="btn btn-primary" onclick="nextStep(5)">Next →</button>
       </div>
     </div>
 
-    <!-- ─── STEP 4: Work Details ─── -->
-    <div class="wizard-step" id="step-4">
+    <!-- ─── STEP 6: Work Details ─── -->
+    <div class="wizard-step" id="step-6">
       <h2>Work Details</h2>
       <p class="step-desc">Used to answer application questions about experience, salary, and work authorisation.</p>
 
@@ -349,45 +416,15 @@
       </div>
 
       <div class="wizard-nav">
-        <button type="button" class="btn btn-secondary" onclick="prevStep(4)">← Back</button>
-        <button type="button" class="btn btn-primary" onclick="nextStep(4)">Next →</button>
+        <button type="button" class="btn btn-secondary" onclick="prevStep(6)">← Back</button>
+        <button type="button" class="btn btn-primary" onclick="nextStep(6)">Next →</button>
       </div>
     </div>
 
-    <!-- ─── STEP 5: API Keys & Paths ─── -->
-    <div class="wizard-step" id="step-5">
-      <h2>API Keys & Paths</h2>
-      <p class="step-desc">Claude API is required to generate tailored resumes. Paths are auto-detected.</p>
-
-      <h3>Claude API Key <span class="req">*</span></h3>
-      <div class="form-group">
-        <label>API Key</label>
-        <input type="password" name="claude_api_key" value="{{ settings.api_keys.claude or '' }}" placeholder="sk-ant-..." required>
-        <span class="hint">Get your key at <strong>console.anthropic.com</strong> → API Keys</span>
-      </div>
-
-      <div class="form-group">
-        <label>AI Provider for Form Answers</label>
-        <select name="ai_provider">
-          {% for p in ['claude', 'openai', 'gemini', 'deepseek'] %}
-          <option value="{{ p }}" {% if settings.api_keys and settings.api_keys.ai_provider == p %}selected{% endif %}>{{ p }}</option>
-          {% endfor %}
-        </select>
-        <span class="hint">Used by the LinkedIn applier to answer form questions. Claude is recommended.</span>
-      </div>
-
-      <div id="other-api-keys" style="display:none;">
-        <div class="form-row">
-          <div class="form-group">
-            <label>OpenAI Key</label>
-            <input type="password" name="openai_api_key" value="{{ settings.api_keys.openai or '' }}" placeholder="sk-...">
-          </div>
-          <div class="form-group">
-            <label>Gemini Key</label>
-            <input type="password" name="gemini_api_key" value="{{ settings.api_keys.gemini or '' }}" placeholder="AIza...">
-          </div>
-        </div>
-      </div>
+    <!-- ─── STEP 7: Paths & Tech Setup ─── -->
+    <div class="wizard-step" id="step-7">
+      <h2>Tech Setup</h2>
+      <p class="step-desc">JobForge uses Claude Code (already installed) for resume generation — no API key needed.</p>
 
       <h3>Project Paths</h3>
       <div class="info-box">
@@ -395,28 +432,22 @@
       </div>
 
       <div class="form-group">
-        <label>career-ops folder</label>
-        <input type="text" name="career_ops_path" value="{{ settings.paths.career_ops or '' }}" placeholder="/Users/you/Desktop/career-ops">
-        <span class="status-dot" id="dot-career-ops"></span>
-      </div>
-      <div class="form-group">
         <label>Auto_job_applier_linkedIn folder</label>
         <input type="text" name="linkedin_applier_path" value="{{ settings.paths.linkedin_applier or '' }}" placeholder="/Users/you/Desktop/Auto_job_applier_linkedIn">
-        <span class="status-dot" id="dot-linkedin"></span>
       </div>
       <div class="form-group">
         <label>Node.js binary path</label>
         <input type="text" name="node_bin_path" value="{{ settings.paths.node_bin or '' }}" placeholder="/usr/local/bin/node">
-        <span class="status-dot" id="dot-node"></span>
       </div>
 
       <!-- Health check summary -->
       <div class="health-grid" id="health-grid">
-        <div class="health-item" id="h-career-ops">⏳ career-ops</div>
+        <div class="health-item" id="h-pdf-script">⏳ PDF script</div>
         <div class="health-item" id="h-cv">⏳ cv.md</div>
+        <div class="health-item" id="h-template">⏳ CV template</div>
+        <div class="health-item" id="h-claude-cli">⏳ Claude CLI</div>
         <div class="health-item" id="h-linkedin">⏳ LinkedIn applier</div>
         <div class="health-item" id="h-node">⏳ Node.js</div>
-        <div class="health-item" id="h-anthropic">⏳ anthropic SDK</div>
         <div class="health-item" id="h-selenium">⏳ selenium</div>
       </div>
       <button type="button" class="btn btn-secondary" onclick="runHealthCheck()" style="margin-top:12px">
@@ -448,7 +479,7 @@
       <div id="save-error" class="error-box" style="display:none;"></div>
 
       <div class="wizard-nav">
-        <button type="button" class="btn btn-secondary" onclick="prevStep(5)">← Back</button>
+        <button type="button" class="btn btn-secondary" onclick="prevStep(7)">← Back</button>
         <button type="button" class="btn btn-primary" id="save-btn" onclick="saveSettings()">
           Save & Continue →
         </button>
@@ -461,9 +492,8 @@
 
 {% block scripts %}
 <script>
-// ─── Step navigation ───────────────────────
 let currentStep = 1;
-const totalSteps = 5;
+const totalSteps = 7;
 
 function showStep(n) {
   document.querySelectorAll('.wizard-step').forEach(el => el.classList.remove('active'));
@@ -471,6 +501,7 @@ function showStep(n) {
   document.getElementById('step-' + n).classList.add('active');
   for (let i = 1; i <= totalSteps; i++) {
     const dot = document.querySelector('[data-step="' + i + '"]');
+    if (!dot) continue;
     if (i < n) dot.classList.add('done');
     else if (i === n) dot.classList.add('active');
   }
@@ -481,29 +512,25 @@ function showStep(n) {
 function nextStep(from) { if (from < totalSteps) showStep(from + 1); }
 function prevStep(from) { if (from > 1) showStep(from - 1); }
 
-// ─── Show/hide other API key fields ────────
-document.querySelector('[name="ai_provider"]').addEventListener('change', function() {
-  document.getElementById('other-api-keys').style.display =
-    this.value !== 'claude' ? 'block' : 'none';
-});
-
 // ─── Health check ───────────────────────────
 function runHealthCheck() {
   const items = {
-    'h-career-ops': 'career_ops_found',
-    'h-cv':         'cv_md_found',
-    'h-linkedin':   'linkedin_applier_found',
-    'h-node':       'node_found',
-    'h-anthropic':  'anthropic_sdk',
-    'h-selenium':   'selenium',
+    'h-pdf-script':  'career_ops_found',
+    'h-cv':          'cv_md_found',
+    'h-template':    'template_found',
+    'h-claude-cli':  'claude_cli',
+    'h-linkedin':    'linkedin_applier_found',
+    'h-node':        'node_found',
+    'h-selenium':    'selenium',
   };
   const labels = {
-    'h-career-ops': 'career-ops',
-    'h-cv':         'cv.md',
-    'h-linkedin':   'LinkedIn applier',
-    'h-node':       'Node.js',
-    'h-anthropic':  'anthropic SDK',
-    'h-selenium':   'selenium',
+    'h-pdf-script':  'PDF script',
+    'h-cv':          'cv.md',
+    'h-template':    'CV template',
+    'h-claude-cli':  'Claude CLI',
+    'h-linkedin':    'LinkedIn applier',
+    'h-node':        'Node.js',
+    'h-selenium':    'selenium',
   };
   Object.keys(items).forEach(id => {
     document.getElementById(id).textContent = '⏳ ' + labels[id];
@@ -559,12 +586,5 @@ function saveSettings() {
       btn.textContent = 'Save & Continue →';
     });
 }
-
-// Run health check on load when on step 5
-window.addEventListener('DOMContentLoaded', () => {
-  {% if not health.career_ops_found or not health.node_found %}
-  // Auto-run check only when on step 5
-  {% endif %}
-});
 </script>
 {% endblock %}

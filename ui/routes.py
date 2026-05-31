@@ -20,26 +20,104 @@ dashboard_bp = Blueprint("dashboard", __name__, url_prefix="/dashboard")
 # SETUP WIZARD
 # ─────────────────────────────────────────────
 
+def _ensure_settings_defaults(s: dict) -> dict:
+    """Guarantee every nested section exists so Jinja2 can access keys safely."""
+    for key in ('identity', 'location', 'linkedin', 'online_presence',
+                'professional_summary', 'experience', 'compensation',
+                'notice_period', 'work_authorization', 'equal_opportunity',
+                'screening', 'paths', 'app', 'profile', 'api_keys'):
+        s.setdefault(key, {})
+    s['job_search'] = s.get('job_search') or {}
+    s['job_search'].setdefault('filters', {})
+    s['job_search'].setdefault('search_terms', [])
+    return s
+
+
 @setup_bp.route("/", methods=["GET"])
 def wizard():
     settings = config_manager.load_settings()
     settings = config_manager.auto_detect_paths(settings)
+    settings = _ensure_settings_defaults(settings)
     health = config_manager.check_health(settings)
-    return render_template("setup.html", settings=settings, health=health)
+
+    # Read back CV and profile for pre-filling wizard on revisit
+    cv_text = config_manager.INTERNAL_CV_PATH.read_text(encoding="utf-8") \
+        if config_manager.INTERNAL_CV_PATH.exists() else ""
+    profile_data = settings.get("profile", {})
+
+    return render_template(
+        "setup.html",
+        settings=settings,
+        health=health,
+        cv_text=cv_text,
+        target_roles=profile_data.get("target_roles", ""),
+        superpower=profile_data.get("superpower", ""),
+        work_preference=profile_data.get("work_preference", []),
+    )
+
+
+def _build_profile_md(target_roles: str, superpower: str, work_preference: list) -> str:
+    roles_lines = "\n".join(
+        f"- {r.strip()}" for r in target_roles.strip().splitlines() if r.strip()
+    ) or "- (not specified)"
+    pref_str = ", ".join(work_preference) if work_preference else "No preference specified"
+    return f"""# User Profile — JobForge
+
+## Target Roles
+{roles_lines}
+
+## Superpower / Unique Angle
+{superpower.strip() or "(not specified)"}
+
+## Work Preference
+{pref_str}
+
+## Bullet Formula
+[Strong action verb] + [specific metric or outcome] + [method/technology used] + [business context]
+Example: "Reduced API latency 40% by implementing Redis caching, enabling 10K concurrent users"
+
+## Keyword Strategy
+- Extract ALL hard and soft skill keywords from the job description
+- Inject top 3 keywords into the Summary section
+- Inject 1-2 keywords into the first bullet of each role
+- Mirror exact phrasing from the JD wherever possible
+
+## Adaptive Framing
+Read cv.md carefully. Identify which projects and achievements are most relevant to the target role.
+Adapt framing and vocabulary to match the role's priorities (e.g. scale for platform roles, speed for startups).
+Lead with the superpower above — it is the candidate's differentiator.
+
+## Location / Remote Policy
+Preferred work style: {pref_str}
+Score hybrid/remote opportunities highly when they match the candidate's preference.
+"""
 
 
 @setup_bp.route("/save", methods=["POST"])
 def save():
     """Receives the wizard form, saves to settings.yaml."""
+    from pathlib import Path
     form = request.form
+
+    # Write cv.md
+    cv_text = form.get("cv_text", "").strip()
+    if cv_text:
+        config_manager.INTERNAL_CV_PATH.write_text(cv_text, encoding="utf-8")
+
+    # Generate and write _profile.md
+    target_roles = form.get("target_roles", "")
+    superpower = form.get("superpower", "")
+    work_preference = form.getlist("work_preference")
+    if target_roles or superpower:
+        profile_md = _build_profile_md(target_roles, superpower, work_preference)
+        (config_manager._ROOT / "modes" / "_profile.md").write_text(profile_md, encoding="utf-8")
 
     # Build the nested settings dict from flat form fields
     data = {
-        "api_keys": {
-            "claude": form.get("claude_api_key", ""),
-            "ai_provider": form.get("ai_provider", "claude"),
-            "openai": form.get("openai_api_key", ""),
-            "gemini": form.get("gemini_api_key", ""),
+        "profile": {
+            "target_roles": target_roles,
+            "superpower": superpower,
+            "work_preference": work_preference,
         },
         "linkedin": {
             "email": form.get("linkedin_email", ""),

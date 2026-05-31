@@ -1,22 +1,31 @@
 """
 Loads, saves, and validates the unified settings.yaml.
 Provides resolved config dicts for downstream modules.
+
+job-forge is self-contained: CV, mode files, template, and PDF script
+all live inside this project directory. No external career-ops needed.
 """
 
-import os
 import shutil
 import subprocess
 from pathlib import Path
 
 import yaml
 
-CONFIG_PATH = Path(__file__).parent / "config" / "settings.yaml"
+CONFIG_PATH = Path(__file__).resolve().parent / "config" / "settings.yaml"
+
+# Internal paths — everything lives inside job-forge
+_ROOT = Path(__file__).resolve().parent
+INTERNAL_CV_PATH      = _ROOT / "cv.md"
+INTERNAL_MODES_DIR    = _ROOT / "modes"
+INTERNAL_TEMPLATES_DIR = _ROOT / "templates"
+INTERNAL_PDF_SCRIPT   = _ROOT / "generate-pdf.mjs"
+
 REQUIRED_FIELDS = [
     ("linkedin", "email"),
     ("linkedin", "password"),
     ("identity", "first_name"),
     ("identity", "last_name"),
-    ("api_keys", "claude"),
 ]
 
 
@@ -29,7 +38,6 @@ def load_settings() -> dict:
 
 def save_settings(data: dict) -> None:
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    # Merge into existing to preserve comments structure
     existing = load_settings()
     merged = _deep_merge(existing, data)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -40,7 +48,6 @@ def is_first_run() -> bool:
     s = load_settings()
     if not s:
         return True
-    # Consider first run if any required field is empty
     for section, key in REQUIRED_FIELDS:
         if not s.get(section, {}).get(key, ""):
             return True
@@ -57,24 +64,12 @@ def validate_settings(data: dict) -> list[str]:
 
 
 def auto_detect_paths(settings: dict) -> dict:
-    """Tries to find career-ops and linkedin-applier dirs automatically."""
+    """Detect linkedin-applier dir and node binary. career-ops is now internal."""
     paths = settings.get("paths", {})
 
-    # career-ops: look relative to this file, then common locations
-    if not paths.get("career_ops"):
-        candidates = [
-            Path(__file__).parent.parent / "career-ops",
-            Path.home() / "Desktop" / "career-ops",
-        ]
-        for c in candidates:
-            if (c / "generate-pdf.mjs").exists():
-                paths["career_ops"] = str(c)
-                break
-
-    # linkedin-applier
     if not paths.get("linkedin_applier"):
         candidates = [
-            Path(__file__).parent.parent / "Auto_job_applier_linkedIn",
+            _ROOT.parent / "Auto_job_applier_linkedIn",
             Path.home() / "Desktop" / "Auto_job_applier_linkedIn",
         ]
         for c in candidates:
@@ -82,7 +77,6 @@ def auto_detect_paths(settings: dict) -> dict:
                 paths["linkedin_applier"] = str(c)
                 break
 
-    # node binary
     if not paths.get("node_bin"):
         node = shutil.which("node")
         if node:
@@ -93,8 +87,8 @@ def auto_detect_paths(settings: dict) -> dict:
 
 
 def get_career_ops_dir(settings: dict) -> Path:
-    p = settings.get("paths", {}).get("career_ops", "")
-    return Path(p) if p else None
+    """Always returns the internal job-forge root (self-contained)."""
+    return _ROOT
 
 
 def get_linkedin_applier_dir(settings: dict) -> Path:
@@ -107,38 +101,27 @@ def get_node_bin(settings: dict) -> str:
 
 
 def read_cv_md(settings: dict) -> str:
-    """Returns cv.md content from the career-ops project."""
-    career_ops = get_career_ops_dir(settings)
-    if not career_ops:
-        return ""
-    cv_path = career_ops / "cv.md"
-    if cv_path.exists():
-        return cv_path.read_text(encoding="utf-8")
+    if INTERNAL_CV_PATH.exists():
+        return INTERNAL_CV_PATH.read_text(encoding="utf-8")
     return ""
 
 
 def read_resume_template(settings: dict) -> str:
-    """Returns the HTML resume template from career-ops."""
-    career_ops = get_career_ops_dir(settings)
-    if not career_ops:
-        return ""
-    tmpl = career_ops / "templates" / "cv-template.html"
+    tmpl = INTERNAL_TEMPLATES_DIR / "cv-template.html"
     if tmpl.exists():
         return tmpl.read_text(encoding="utf-8")
     return ""
 
 
 def check_health(settings: dict) -> dict:
-    """Returns a dict of health checks for the setup wizard."""
     status = {}
 
-    career_ops = get_career_ops_dir(settings)
-    status["career_ops_found"] = career_ops and (career_ops / "generate-pdf.mjs").exists()
-    status["cv_md_found"] = career_ops and (career_ops / "cv.md").exists()
-    status["template_found"] = career_ops and (career_ops / "templates" / "cv-template.html").exists()
+    status["career_ops_found"] = INTERNAL_PDF_SCRIPT.exists()
+    status["cv_md_found"] = INTERNAL_CV_PATH.exists()
+    status["template_found"] = (INTERNAL_TEMPLATES_DIR / "cv-template.html").exists()
 
     applier = get_linkedin_applier_dir(settings)
-    status["linkedin_applier_found"] = applier and (applier / "runAiBot.py").exists()
+    status["linkedin_applier_found"] = bool(applier and (applier / "runAiBot.py").exists())
 
     node = get_node_bin(settings)
     try:
@@ -149,11 +132,8 @@ def check_health(settings: dict) -> dict:
         status["node_found"] = False
         status["node_version"] = ""
 
-    try:
-        import anthropic  # noqa: F401
-        status["anthropic_sdk"] = True
-    except ImportError:
-        status["anthropic_sdk"] = False
+    claude_bin = shutil.which("claude")
+    status["claude_cli"] = bool(claude_bin)
 
     try:
         import selenium  # noqa: F401

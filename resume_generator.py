@@ -10,7 +10,7 @@ Uses career-ops' full mode files as the system prompt:
 
 For each approved job:
   1. Assemble system prompt from career-ops mode files
-  2. Call Claude Sonnet API with cv.md + JD text
+  2. Call claude CLI (uses Claude Code subscription, no API key needed)
   3. Write tailored HTML to data/resumes/{job_id}.html
   4. Run `node generate-pdf.mjs` → PDF at data/resumes/{job_id}-{company}-{title}.pdf
 
@@ -22,10 +22,9 @@ SSE stream API:
 import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
-
-import anthropic
 
 import config_manager
 import scraper
@@ -34,8 +33,6 @@ import scraper
 DATA_DIR = Path(__file__).resolve().parent / "data"
 RESUMES_DIR = DATA_DIR / "resumes"
 RESUMES_INDEX = DATA_DIR / "resumes.json"
-
-CLAUDE_MODEL = "claude-sonnet-4-6"
 
 
 # ── career-ops mode file readers ─────────────────────────────────────────────
@@ -48,43 +45,40 @@ def _read_career_ops_file(career_ops: Path, relative: str) -> str:
 
 
 def _build_system_prompt(career_ops: Path) -> str:
-    """Assemble system prompt from career-ops' actual mode files."""
+    """
+    Minimal system prompt for PDF generation only.
+    _shared.md is intentionally excluded — it contains evaluation/scoring rules
+    irrelevant to PDF generation and adds ~8KB that causes CLI timeouts.
+    """
     parts = []
 
-    shared = _read_career_ops_file(career_ops, "modes/_shared.md")
-    if shared:
-        parts.append("# System Context\n\n" + shared)
-
+    # User profile: target roles, superpower, work preference, bullet formula
     profile_md = _read_career_ops_file(career_ops, "modes/_profile.md")
     if profile_md:
-        parts.append("# User Profile\n\n" + profile_md)
+        parts.append("# Candidate Profile\n\n" + profile_md)
 
+    # PDF generation rules: layout, keyword injection, ATS rules, template placeholders
     pdf_mode = _read_career_ops_file(career_ops, "modes/pdf.md")
     if pdf_mode:
-        parts.append("# PDF Generation Mode\n\n" + pdf_mode)
+        parts.append("# PDF Generation Rules\n\n" + pdf_mode)
 
-    profile_yml = _read_career_ops_file(career_ops, "config/profile.yml")
-    if profile_yml:
-        parts.append("# Candidate Profile (profile.yml)\n\n```yaml\n" + profile_yml + "\n```")
-
+    # Optional: article-digest proof points
     article_digest = _read_career_ops_file(career_ops, "article-digest.md")
     if article_digest:
-        parts.append("# Proof Points (article-digest.md)\n\n" + article_digest)
+        parts.append("# Proof Points\n\n" + article_digest)
 
     parts.append(
-        "# Your Task\n\n"
-        "You are now in PDF generation mode. Given the candidate's CV and a job description below, "
-        "produce a complete, ATS-optimized tailored HTML resume following ALL rules above.\n\n"
-        "Requirements:\n"
-        "- Detect the role archetype and adapt framing per _profile.md\n"
+        "# Task\n\n"
+        "Generate a complete ATS-optimized tailored HTML resume.\n\n"
+        "Rules:\n"
         "- Extract ALL hard and soft skill keywords from the JD\n"
-        "- Inject keywords: Summary (top 3), first bullet of each role, Skills/Competencies section\n"
-        "- Apply the bullet formula from _profile.md: [Verb] + [metric] + by [method] + [context]\n"
-        "- 3-5 bullets per role (strict)\n"
+        "- Inject top 3 keywords into Summary; 1-2 into first bullet of each role\n"
+        "- Apply bullet formula: [Action verb] + [metric] + [method] + [context]\n"
+        "- 3-5 bullets per role, strictly\n"
         "- Fill EVERY {{PLACEHOLDER}} in the HTML template with real content\n"
-        "- Detect location → paper format: US/Canada = 8.5in, else 210mm\n"
-        "- Return ONLY the complete HTML document. No markdown fences, no explanation.\n"
-        "- NEVER invent experience or metrics not present in cv.md or article-digest.md"
+        "- US/Canada job location → page width 8.5in, else 210mm\n"
+        "- Return ONLY the complete HTML. No markdown fences, no explanation.\n"
+        "- NEVER invent experience or metrics not in the CV."
     )
 
     return "\n\n---\n\n".join(parts)
@@ -132,6 +126,33 @@ def _slug(text: str, max_len: int = 30) -> str:
     return text[:max_len]
 
 
+def _call_claude_cli(system_prompt: str, user_message: str) -> str:
+    """
+    Run `claude -p` (Claude Code CLI) with the given prompts.
+    Uses the active Claude Code subscription — no separate API key needed.
+    """
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
+        raise RuntimeError(
+            "claude CLI not found in PATH. Make sure Claude Code is installed."
+        )
+
+    result = subprocess.run(
+        [claude_bin, "--system-prompt", system_prompt, "-p"],
+        input=user_message,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=600,
+    )
+
+    if result.returncode != 0:
+        err = result.stderr.strip() or f"claude CLI exited with code {result.returncode}"
+        raise RuntimeError(err)
+
+    return result.stdout.strip()
+
+
 def generate_resume(job: dict, settings: dict) -> dict:
     """
     Generate one tailored PDF resume for a job using career-ops' full mode files.
@@ -144,35 +165,21 @@ def generate_resume(job: dict, settings: dict) -> dict:
     company = job.get("company", "company")
     jd_text = job.get("job_description", "")
 
-    career_ops = config_manager.get_career_ops_dir(settings)
-    if not career_ops or not career_ops.exists():
-        return {"job_id": job_id, "ok": False, "error": "career-ops directory not found"}
-
     cv_md = config_manager.read_cv_md(settings)
     template_html = config_manager.read_resume_template(settings)
-    api_key = settings.get("api_keys", {}).get("claude", "")
 
     if not cv_md:
-        return {"job_id": job_id, "ok": False, "error": "cv.md not found in career-ops"}
+        return {"job_id": job_id, "ok": False, "error": "cv.md not found — add your CV to job-forge/cv.md"}
     if not template_html:
-        return {"job_id": job_id, "ok": False, "error": "cv-template.html not found in career-ops"}
-    if not api_key:
-        return {"job_id": job_id, "ok": False, "error": "Claude API key not configured"}
+        return {"job_id": job_id, "ok": False, "error": "cv-template.html not found in job-forge/templates/"}
 
-    system_prompt = _build_system_prompt(career_ops)
+    system_prompt = _build_system_prompt(config_manager.get_career_ops_dir(settings))
     user_message = _build_user_message(cv_md, jd_text, template_html)
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=16000,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
-        )
-        tailored_html = message.content[0].text
+        tailored_html = _call_claude_cli(system_prompt, user_message)
     except Exception as e:
-        return {"job_id": job_id, "ok": False, "error": f"Claude API error: {e}"}
+        return {"job_id": job_id, "ok": False, "error": f"Claude CLI error: {e}"}
 
     # Strip any accidental markdown fence
     tailored_html = re.sub(r"^```html?\s*", "", tailored_html.strip(), flags=re.IGNORECASE)
@@ -205,7 +212,7 @@ def generate_resume(job: dict, settings: dict) -> dict:
     pdf_path = RESUMES_DIR / pdf_name
 
     node_bin = config_manager.get_node_bin(settings)
-    gen_pdf_script = career_ops / "generate-pdf.mjs"
+    gen_pdf_script = config_manager.INTERNAL_PDF_SCRIPT
 
     if not gen_pdf_script.exists():
         return {
@@ -220,7 +227,7 @@ def generate_resume(job: dict, settings: dict) -> dict:
             capture_output=True,
             text=True,
             timeout=60,
-            cwd=str(career_ops),
+            cwd=str(config_manager._ROOT),
         )
         if result.returncode != 0:
             return {

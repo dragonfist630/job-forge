@@ -4,6 +4,11 @@ config/settings.yaml
 # Scraped / session data
 data/jobs.json
 data/approved_jobs.json
+data/resumes.json
+data/resumes/
+
+# Node
+node_modules/
 
 # Python
 __pycache__/
