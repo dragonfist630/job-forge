@@ -1,6 +1,7 @@
 services:
   jobforge:
     build: .
+    platform: linux/amd64
     ports:
       - "7070:7070"
     volumes:

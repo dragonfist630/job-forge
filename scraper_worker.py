@@ -131,6 +131,33 @@ def _cdp_chrome_version(host_ip: str, port: int = 9222) -> str:
         return ""
 
 
+def _install_chromedriver(chrome_ver: str | None) -> str:
+    """Download chromedriver matching chrome_ver, with fallbacks."""
+    from webdriver_manager.chrome import ChromeDriverManager
+    errors = []
+    # 1. Exact version match
+    if chrome_ver:
+        try:
+            return ChromeDriverManager(driver_version=chrome_ver).install()
+        except Exception as e:
+            errors.append(str(e))
+    # 2. Major version only (e.g. "149" instead of "149.0.7827.54")
+    if chrome_ver:
+        major = chrome_ver.split(".")[0]
+        try:
+            return ChromeDriverManager(driver_version=major).install()
+        except Exception as e:
+            errors.append(str(e))
+    # 3. Latest available (auto-detect)
+    try:
+        return ChromeDriverManager().install()
+    except Exception as e:
+        errors.append(str(e))
+    raise RuntimeError(
+        f"Could not download chromedriver. Errors: {'; '.join(errors)}"
+    )
+
+
 def setup_driver(run_in_background: bool = False, profile_dir: str = None):
     from selenium import webdriver
     from selenium.webdriver.chrome.service import Service
@@ -159,14 +186,7 @@ def setup_driver(run_in_background: bool = False, profile_dir: str = None):
 
         options = Options()
         options.debugger_address = f"{host_ip}:9222"
-        try:
-            mgr_path = (
-                ChromeDriverManager(driver_version=chrome_ver).install()
-                if chrome_ver
-                else ChromeDriverManager().install()
-            )
-        except Exception:
-            mgr_path = ChromeDriverManager().install()
+        mgr_path = _install_chromedriver(chrome_ver)
         driver = webdriver.Chrome(service=Service(mgr_path), options=options)
         return driver, WebDriverWait(driver, 15)
 
