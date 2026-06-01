@@ -111,6 +111,17 @@ def build_search_url(term: str, settings: dict) -> str:
 
 
 # ── Browser setup ─────────────────────────────────────────────────────────────
+def _cdp_chrome_version(host: str = "host.docker.internal", port: int = 9222) -> str:
+    """Return Chrome browser string from CDP endpoint, e.g. 'Chrome/148.0.7778.178'."""
+    import urllib.request
+    import json as _j
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/json/version", timeout=5) as r:
+            return _j.loads(r.read()).get("Browser", "")
+    except Exception:
+        return ""
+
+
 def setup_driver(run_in_background: bool = False, profile_dir: str = None):
     from selenium import webdriver
     from selenium.webdriver.chrome.service import Service
@@ -121,12 +132,30 @@ def setup_driver(run_in_background: bool = False, profile_dir: str = None):
     # Docker mode: attach to host Chrome launched by JobForge.bat/.command
     # with --remote-debugging-port=9222. No new Chrome launched.
     if os.environ.get("JOBFORGE_DOCKER"):
+        browser_str = _cdp_chrome_version()
+        if not browser_str:
+            raise RuntimeError(
+                "Cannot reach Chrome at host.docker.internal:9222. "
+                "Make sure you launched JobForge via JobForge.command "
+                "(not 'python main.py' directly) — the launcher starts Chrome "
+                "with the required remote-debugging port."
+            )
+        try:
+            chrome_ver = browser_str.split("/")[1]  # "148.0.7778.178"
+        except Exception:
+            chrome_ver = None
+
         options = Options()
         options.debugger_address = "host.docker.internal:9222"
-        driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=options,
-        )
+        try:
+            mgr_path = (
+                ChromeDriverManager(driver_version=chrome_ver).install()
+                if chrome_ver
+                else ChromeDriverManager().install()
+            )
+        except Exception:
+            mgr_path = ChromeDriverManager().install()
+        driver = webdriver.Chrome(service=Service(mgr_path), options=options)
         return driver, WebDriverWait(driver, 15)
 
     options = Options()

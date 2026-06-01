@@ -170,13 +170,12 @@ function startScan() {
     } else if (obj.type === 'done') {
       onScanDone(`Scan complete — ${obj.count} jobs found`);
     } else if (obj.type === 'error') {
-      document.getElementById('progress-msg').textContent = 'Error: ' + obj.msg;
-      onScanDone('Scan failed');
+      onScanDone('❌ ' + obj.msg, true);
     }
   };
 
   eventSource.onerror = function() {
-    onScanDone('Connection lost');
+    onScanDone('Connection lost — check the terminal for details');
   };
 }
 
@@ -186,14 +185,16 @@ function stopScan() {
   onScanDone('Scan stopped');
 }
 
-function onScanDone(msg) {
+function onScanDone(msg, isError) {
   scanning = false;
   const btn = document.getElementById('btn-scan');
   btn.textContent = 'Start Scan';
   document.getElementById('progress-msg').textContent = msg;
-  setTimeout(() => {
-    document.getElementById('scan-progress').style.display = 'none';
-  }, 3000);
+  if (!isError) {
+    setTimeout(() => {
+      document.getElementById('scan-progress').style.display = 'none';
+    }, 3000);
+  }
   if (eventSource) { eventSource.close(); eventSource = null; }
 }
 
