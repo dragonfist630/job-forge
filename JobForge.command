@@ -42,6 +42,9 @@ fi
 ok "Chrome"
 
 # ── Launch Chrome with remote debugging ─────────────────────
+# Kill any prior debug-port Chrome so new flags (--remote-debugging-address) take effect
+lsof -ti tcp:9222 | xargs kill -9 2>/dev/null || true
+sleep 1
 info "Starting Chrome (remote debugging mode)..."
 "$CHROME" \
     --remote-debugging-port=9222 \
