@@ -363,7 +363,9 @@ def generate():
 
 @dashboard_bp.route("/api/generate/start")
 def generate_start():
-    """SSE endpoint — streams resume generation progress."""
+    """SSE endpoint — generate all approved jobs not yet done."""
+    if resume_generator.is_generating():
+        return jsonify({"error": "Generation already in progress"}), 409
     settings = config_manager.load_settings()
     settings = config_manager.auto_detect_paths(settings)
 
@@ -376,6 +378,138 @@ def generate_start():
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@dashboard_bp.route("/api/generate/job/<job_id>")
+def generate_job(job_id):
+    """SSE endpoint — generate one job independently (concurrent with other jobs)."""
+    if resume_generator.is_job_generating(job_id):
+        return jsonify({"error": "Already generating this job"}), 409
+    settings = config_manager.load_settings()
+    settings = config_manager.auto_detect_paths(settings)
+
+    def go():
+        for chunk in resume_generator.stream_generate_single(settings, job_id):
+            yield chunk
+
+    return Response(
+        stream_with_context(go()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@dashboard_bp.route("/api/generate/job/<job_id>/stop", methods=["POST"])
+def stop_job(job_id):
+    ok = resume_generator.stop_job(job_id)
+    return jsonify({"ok": ok})
+
+
+@dashboard_bp.route("/api/generate/job/<job_id>/status")
+def job_gen_status(job_id):
+    return jsonify({"generating": resume_generator.is_job_generating(job_id)})
+
+
+@dashboard_bp.route("/api/generate/pause", methods=["POST"])
+def generate_pause():
+    resume_generator.set_paused(True)
+    return jsonify({"ok": True})
+
+
+@dashboard_bp.route("/api/generate/resume_gen", methods=["POST"])
+def generate_resume_ctrl():
+    resume_generator.set_paused(False)
+    return jsonify({"ok": True})
+
+
+@dashboard_bp.route("/api/generate/stop", methods=["POST"])
+def generate_stop():
+    resume_generator.set_stopped(True)
+    return jsonify({"ok": True})
+
+
+@dashboard_bp.route("/api/generate/status")
+def generate_status():
+    return jsonify({"generating": resume_generator.is_generating()})
+
+
+@dashboard_bp.route("/api/resumes/<job_id>/edit-data")
+def resume_edit_data(job_id):
+    all_jobs = scraper.get_jobs()
+    job = next((j for j in all_jobs if j["job_id"] == job_id), None)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    values = resume_generator.get_resume_content(job_id)
+    if not values:
+        return jsonify({"error": "No content file — regenerate the resume first"}), 404
+    return jsonify({
+        "job_title": job.get("title", ""),
+        "company": job.get("company", ""),
+        "structured": resume_generator.values_to_structured(values),
+    })
+
+
+@dashboard_bp.route("/api/resumes/<job_id>/preview", methods=["POST"])
+def resume_preview(job_id):
+    all_jobs = scraper.get_jobs()
+    job = next((j for j in all_jobs if j["job_id"] == job_id), None)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    settings = config_manager.load_settings()
+    settings = config_manager.auto_detect_paths(settings)
+    structured = (request.get_json(force=True) or {}).get("structured", {})
+    values = resume_generator.structured_to_values(structured)
+    try:
+        html = resume_generator.render_resume_html(job, settings, values)
+        return jsonify({"html": html})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@dashboard_bp.route("/api/resumes/<job_id>/save-content", methods=["POST"])
+def resume_save_content(job_id):
+    import subprocess as sp
+    all_jobs = scraper.get_jobs()
+    job = next((j for j in all_jobs if j["job_id"] == job_id), None)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    settings = config_manager.load_settings()
+    settings = config_manager.auto_detect_paths(settings)
+    structured = (request.get_json(force=True) or {}).get("structured", {})
+    values = resume_generator.structured_to_values(structured)
+    try:
+        html = resume_generator.render_resume_html(job, settings, values)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    html_path = resume_generator.RESUMES_DIR / f"{job_id}.html"
+    html_path.write_text(html, encoding="utf-8")
+    resume_generator._save_resume_content(job_id, values)
+
+    prefilled = resume_generator._prefill_from_context(job, settings)
+    paper = "letter" if prefilled.get("PAGE_WIDTH") == "8.5in" else "a4"
+    company_slug = resume_generator._slug(job.get("company", "company"))
+    title_slug = resume_generator._slug(job.get("title", "role"))
+    pdf_name = f"{job_id}-{company_slug}-{title_slug}.pdf"
+    pdf_path = resume_generator.RESUMES_DIR / pdf_name
+
+    try:
+        r = sp.run(
+            [config_manager.get_node_bin(settings),
+             str(config_manager.INTERNAL_PDF_SCRIPT),
+             str(html_path), str(pdf_path), f"--format={paper}"],
+            capture_output=True, text=True, timeout=60,
+            cwd=str(config_manager._ROOT),
+        )
+        if r.returncode != 0:
+            return jsonify({"ok": False, "error": f"PDF failed: {r.stderr[:200]}"}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    index = resume_generator.get_resumes()
+    index[job_id] = str(pdf_path)
+    resume_generator._save_resumes(index)
+    return jsonify({"ok": True, "pdf_name": pdf_name})
 
 
 @dashboard_bp.route("/api/resumes/<job_id>/download")

@@ -6,13 +6,13 @@
   <div class="generate-header">
     <div>
       <h1>Generate Resumes</h1>
-      <p class="sub">{{ jobs|length }} approved job{{ 's' if jobs|length != 1 else '' }} — Claude will tailor your CV for each one.</p>
+      <p class="sub" id="gen-sub">{{ jobs|length }} approved job{{ 's' if jobs|length != 1 else '' }}</p>
     </div>
     <div class="generate-header-actions">
       <a href="/dashboard/jobs" class="btn btn-secondary">← Back to Jobs</a>
-      <button class="btn btn-primary" id="btn-generate" onclick="startGenerate()"
+      <button class="btn btn-primary" id="btn-generate-all" onclick="startGenerateAll()"
               {% if not jobs %}disabled{% endif %}>
-        Generate All Resumes
+        Generate Remaining
       </button>
     </div>
   </div>
@@ -23,133 +23,308 @@
   </div>
   {% else %}
 
-  <!-- Progress -->
-  <div id="gen-progress" style="display:none;" class="scan-progress">
-    <div class="progress-bar">
-      <div class="progress-fill" id="gen-fill" style="width:0%; animation:none; transition: width .4s;"></div>
+  <!-- "Generate All" sequential progress toolbar -->
+  <div id="gen-toolbar" style="display:none;" class="gen-toolbar">
+    <div class="progress-bar"><div class="progress-fill" id="gen-fill" style="width:0%; animation:none; transition: width .4s;"></div></div>
+    <div class="gen-toolbar-row">
+      <p id="gen-msg">Starting...</p>
+      <div class="gen-toolbar-btns">
+        <button class="btn btn-sm btn-secondary" id="btn-pause" onclick="togglePause()">Pause</button>
+        <button class="btn btn-sm btn-danger" id="btn-stop-all" onclick="stopAll()">Stop</button>
+      </div>
     </div>
-    <p id="gen-msg">Starting...</p>
   </div>
 
   <!-- Job cards -->
   <div class="resume-list" id="resume-list">
     {% for job in jobs %}
     {% set resume_ready = job.job_id in resumes %}
-    <div class="resume-card" id="rcard-{{ job.job_id }}">
-      <div class="resume-card-left">
+    <div class="resume-card {% if resume_ready %}card-done{% endif %}" id="rcard-{{ job.job_id }}">
+
+      <div class="resume-title-row">
         <div class="resume-status" id="status-{{ job.job_id }}">
-          {% if resume_ready %}
-          <span class="status-done">✓</span>
-          {% else %}
-          <span class="status-pending">—</span>
-          {% endif %}
+          {% if resume_ready %}<span class="status-done">✓</span>
+          {% else %}<span class="status-pending">—</span>{% endif %}
         </div>
         <div class="resume-info">
           <h3>{{ job.title }}</h3>
-          <p class="resume-company">{{ job.company }} — {{ job.work_location }}</p>
+          <p class="resume-company">{{ job.company }} — <span class="job-location">{{ job.work_location }}</span>
+            {% if job.work_style %}<span class="badge">{{ job.work_style }}</span>{% endif %}
+          </p>
+        </div>
+        {% if job.score is defined %}
+          {% set s = job.score %}
+          <span class="score-badge {% if s >= 7 %}score-green{% elif s >= 4 %}score-amber{% else %}score-red{% endif %}">◆ {{ s }}/10</span>
+        {% endif %}
+        <div class="resume-card-actions" id="actions-{{ job.job_id }}">
+          {% if resume_ready %}
+            <a href="/dashboard/api/resumes/{{ job.job_id }}/download" class="btn btn-sm" id="dl-{{ job.job_id }}">Download PDF</a>
+            <button class="btn btn-sm btn-secondary" onclick="openEditor('{{ job.job_id }}')">Edit Resume</button>
+            <button class="btn btn-sm btn-secondary" onclick="generateOne('{{ job.job_id }}')">Regenerate</button>
+          {% else %}
+            <span class="btn btn-sm btn-ghost" id="dl-{{ job.job_id }}">Pending</span>
+            <button class="btn btn-sm btn-primary" id="gen-btn-{{ job.job_id }}"
+                    onclick="generateOne('{{ job.job_id }}')">Generate</button>
+          {% endif %}
         </div>
       </div>
-      <div class="resume-card-right">
-        {% if resume_ready %}
-        <a href="/dashboard/api/resumes/{{ job.job_id }}/download" class="btn btn-sm" id="dl-{{ job.job_id }}">
-          Download PDF
-        </a>
-        {% else %}
-        <span class="btn btn-sm btn-ghost" id="dl-{{ job.job_id }}">Pending</span>
-        {% endif %}
+
+      <!-- Per-card progress (shown while this card is generating) -->
+      <div id="card-progress-{{ job.job_id }}" class="card-gen-progress" style="display:none;">
+        <span id="card-msg-{{ job.job_id }}" class="card-gen-msg">Connecting...</span>
+        <button class="btn btn-sm btn-danger" onclick="stopOne('{{ job.job_id }}')">Stop</button>
       </div>
+
+      <!-- Expandable job description -->
+      <div class="resume-desc-wrap">
+        <button class="toggle-gen-desc" onclick="toggleGenDesc('{{ job.job_id }}')">Show description</button>
+        <div class="resume-desc" id="gendesc-{{ job.job_id }}" style="display:none">
+          <pre>{{ job.job_description }}</pre>
+        </div>
+      </div>
+
     </div>
     {% endfor %}
   </div>
 
-  {% if resumes %}
-  <div class="generate-footer">
-    <p>{{ resumes|length }} resume{{ 's' if resumes|length != 1 else '' }} ready.</p>
+  {% set resume_count = resumes|length %}
+  <div class="generate-footer" id="generate-footer" {% if resume_count == 0 %}style="display:none"{% endif %}>
+    <p id="footer-count">{{ resume_count }} resume{{ 's' if resume_count != 1 else '' }} ready.</p>
     <a href="/dashboard/apply" class="btn btn-primary">Auto Apply →</a>
   </div>
-  {% endif %}
 
   {% endif %}
+</div>
+<!-- ── Resume editor drawer ─────────────────────────────── -->
+<div id="editor-overlay" class="editor-overlay" onclick="closeEditor()"></div>
+<div id="editor-drawer" class="editor-drawer">
+  <div class="editor-pane-left">
+    <div class="editor-header">
+      <h2 id="editor-job-title">Edit Resume</h2>
+      <button class="editor-close" onclick="closeEditor()">✕</button>
+    </div>
+    <div class="editor-body" id="editor-body">
+      <p style="color:#6b7280;font-size:14px">Loading...</p>
+    </div>
+  </div>
+  <div class="editor-pane-right">
+    <div class="editor-preview-bar">
+      <span>Live Preview</span>
+      <span id="preview-status" class="preview-status-label"></span>
+    </div>
+    <iframe id="editor-iframe" class="editor-iframe"></iframe>
+  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-let total = {{ jobs|length }};
-let done = 0;
+// Per-job SSE streams (job_id → EventSource)
+const activeStreams = {};
+// Track which jobs have resumes
+const doneJobs = new Set({{ resumes.keys()|list|tojson }});
+let doneCount = {{ resumes|length }};
 
-function startGenerate() {
-  const btn = document.getElementById('btn-generate');
-  btn.disabled = true;
-  btn.textContent = 'Generating...';
+// "Generate All" state
+let allGenerating = false;
+let allPaused = false;
+let allEs = null;
+let allTotal = 0;
+let allDone = 0;
 
-  document.getElementById('gen-progress').style.display = 'block';
-  document.getElementById('gen-msg').textContent = 'Connecting to Claude...';
+// ── Description toggle ────────────────────────────────────────────────────────
+function toggleGenDesc(jobId) {
+  const desc = document.getElementById('gendesc-' + jobId);
+  const btn = desc.previousElementSibling;
+  desc.style.display = desc.style.display === 'none' ? 'block' : 'none';
+  btn.textContent = desc.style.display === 'none' ? 'Show description' : 'Hide description';
+}
 
-  const es = new EventSource('/dashboard/api/generate/start');
+// ── Per-job independent generation ────────────────────────────────────────────
+function generateOne(jobId) {
+  if (activeStreams[jobId]) return;  // already running
+
+  showCardProgress(jobId, 'Connecting to Claude...');
+  disableGenBtn(jobId, true);
+
+  const es = new EventSource('/dashboard/api/generate/job/' + jobId);
+  activeStreams[jobId] = es;
 
   es.onmessage = function(e) {
     const obj = JSON.parse(e.data);
 
-    if (obj.type === 'start') {
-      total = obj.total;
-      setProgress(0, `Starting — ${total} resume${total !== 1 ? 's' : ''} to generate`);
+    if (obj.type === 'progress') {
+      setCardMsg(jobId, obj.msg);
 
-    } else if (obj.type === 'progress') {
-      setStatus(obj.job_id, 'working', '...');
-      document.getElementById('gen-msg').textContent = obj.msg;
+    } else if (obj.type === 'ping') {
+      // keepalive — no-op
 
     } else if (obj.type === 'done_job') {
-      done++;
-      const pct = Math.round((done / total) * 100);
-      setProgress(pct, `${done}/${total} done`);
+      es.close();
+      delete activeStreams[jobId];
+      hideCardProgress(jobId);
 
       if (obj.ok) {
-        setStatus(obj.job_id, 'done', '✓');
-        makeDlLink(obj.job_id);
+        doneJobs.add(jobId);
+        doneCount++;
+        setStatus(jobId, 'done', '✓');
+        makeDlLink(jobId);
+        showRegenBtn(jobId);
+        updateFooter();
+        if (obj.audit_warnings && obj.audit_warnings.length > 0) {
+          showWarning(jobId, 'Audit: ' + obj.audit_warnings.join('; '));
+        }
       } else {
-        setStatus(obj.job_id, 'error', '✗');
-        showError(obj.job_id, obj.error || 'Unknown error');
+        setStatus(jobId, 'error', '✗');
+        showError(jobId, obj.error || 'Generation failed');
+        disableGenBtn(jobId, false);
       }
+
+    } else if (obj.type === 'stopped') {
+      es.close();
+      delete activeStreams[jobId];
+      hideCardProgress(jobId);
+      setStatus(jobId, 'pending', '—');
+      disableGenBtn(jobId, false);
 
     } else if (obj.type === 'complete') {
-      es.close();
-      setProgress(100, `Complete — ${obj.succeeded}/${obj.total} resumes generated`);
-      btn.disabled = false;
-      btn.textContent = 'Regenerate All';
-
-      if (obj.succeeded > 0) {
-        const footer = document.querySelector('.generate-footer');
-        if (!footer) {
-          const f = document.createElement('div');
-          f.className = 'generate-footer';
-          f.innerHTML = `<p>${obj.succeeded} resume${obj.succeeded !== 1 ? 's' : ''} ready.</p>
-            <a href="/dashboard/apply" class="btn btn-primary">Auto Apply →</a>`;
-          document.querySelector('.generate-wrap').appendChild(f);
-        }
-      }
-
+      // handled by done_job
     } else if (obj.type === 'error') {
       es.close();
-      document.getElementById('gen-msg').textContent = 'Error: ' + obj.msg;
-      btn.disabled = false;
-      btn.textContent = 'Retry';
+      delete activeStreams[jobId];
+      hideCardProgress(jobId);
+      showError(jobId, obj.msg || 'Unknown error');
+      disableGenBtn(jobId, false);
     }
   };
 
   es.onerror = function() {
     es.close();
-    document.getElementById('gen-msg').textContent = 'Connection lost.';
-    btn.disabled = false;
-    btn.textContent = 'Retry';
+    delete activeStreams[jobId];
+    hideCardProgress(jobId);
+    showError(jobId, 'Connection lost.');
+    disableGenBtn(jobId, false);
   };
 }
 
-function setProgress(pct, msg) {
+function stopOne(jobId) {
+  fetch('/dashboard/api/generate/job/' + jobId + '/stop', {method: 'POST'});
+  const es = activeStreams[jobId];
+  if (es) { es.close(); delete activeStreams[jobId]; }
+  hideCardProgress(jobId);
+  setStatus(jobId, 'pending', '—');
+  disableGenBtn(jobId, false);
+}
+
+// ── Generate All (sequential with pause/stop) ─────────────────────────────────
+function startGenerateAll() {
+  if (allGenerating || Object.keys(activeStreams).length > 0) {
+    alert('Stop individual generations first, then use Generate Remaining.');
+    return;
+  }
+  allGenerating = true;
+  allPaused = false;
+  allDone = 0;
+
+  const btn = document.getElementById('btn-generate-all');
+  if (btn) btn.disabled = true;
+
+  const toolbar = document.getElementById('gen-toolbar');
+  toolbar.style.display = 'block';
+  document.getElementById('gen-msg').textContent = 'Connecting...';
+  document.getElementById('gen-fill').style.width = '0%';
+  document.getElementById('btn-pause').textContent = 'Pause';
+
+  allEs = new EventSource('/dashboard/api/generate/start');
+
+  allEs.onmessage = function(e) {
+    const obj = JSON.parse(e.data);
+
+    if (obj.type === 'start') {
+      allTotal = obj.total;
+      setAllProgress(0, `Starting — ${allTotal} to generate`);
+
+    } else if (obj.type === 'progress') {
+      setStatus(obj.job_id, 'working', '⋯');
+      document.getElementById('gen-msg').textContent = obj.msg;
+
+    } else if (obj.type === 'ping') {
+      // keepalive
+
+    } else if (obj.type === 'done_job') {
+      if (obj.ok) {
+        allDone++;
+        doneCount++;
+        doneJobs.add(obj.job_id);
+        setStatus(obj.job_id, 'done', '✓');
+        makeDlLink(obj.job_id);
+        showRegenBtn(obj.job_id);
+        updateFooter();
+        if (obj.audit_warnings && obj.audit_warnings.length > 0) {
+          showWarning(obj.job_id, 'Audit: ' + obj.audit_warnings.join('; '));
+        }
+      } else {
+        setStatus(obj.job_id, 'error', '✗');
+        showError(obj.job_id, obj.error || 'Failed');
+      }
+      setAllProgress(Math.round((allDone / Math.max(allTotal, 1)) * 100), `${allDone}/${allTotal} done`);
+
+    } else if (obj.type === 'stopped') {
+      finishAll(`Stopped — ${obj.done} done`);
+
+    } else if (obj.type === 'complete') {
+      finishAll(`Complete — ${obj.succeeded}/${obj.total} generated`);
+
+    } else if (obj.type === 'error') {
+      finishAll('Error: ' + obj.msg);
+    }
+  };
+
+  allEs.onerror = function() {
+    finishAll('Connection lost.');
+  };
+}
+
+function togglePause() {
+  if (!allGenerating) return;
+  const btn = document.getElementById('btn-pause');
+  if (allPaused) {
+    allPaused = false;
+    btn.textContent = 'Pause';
+    document.getElementById('gen-msg').textContent = 'Resuming...';
+    fetch('/dashboard/api/generate/resume_gen', {method: 'POST'});
+  } else {
+    allPaused = true;
+    btn.textContent = 'Resume';
+    document.getElementById('gen-msg').textContent = 'Pausing after current job...';
+    fetch('/dashboard/api/generate/pause', {method: 'POST'});
+  }
+}
+
+function stopAll() {
+  fetch('/dashboard/api/generate/stop', {method: 'POST'});
+  document.getElementById('gen-msg').textContent = 'Stopping after current job...';
+}
+
+function finishAll(msg) {
+  if (allEs) { allEs.close(); allEs = null; }
+  allGenerating = false;
+  allPaused = false;
+  document.getElementById('gen-msg').textContent = msg;
+  const btn = document.getElementById('btn-generate-all');
+  if (btn) btn.disabled = false;
+  setTimeout(() => {
+    const bar = document.getElementById('gen-toolbar');
+    if (bar) bar.style.display = 'none';
+  }, 5000);
+}
+
+function setAllProgress(pct, msg) {
   document.getElementById('gen-fill').style.width = pct + '%';
   document.getElementById('gen-msg').textContent = msg;
 }
 
+// ── Shared helpers ─────────────────────────────────────────────────────────────
 function setStatus(jobId, state, icon) {
   const el = document.getElementById('status-' + jobId);
   if (!el) return;
@@ -157,37 +332,437 @@ function setStatus(jobId, state, icon) {
   const card = document.getElementById('rcard-' + jobId);
   if (card) {
     card.classList.remove('card-working', 'card-done', 'card-error');
-    card.classList.add('card-' + state);
+    if (state !== 'pending') card.classList.add('card-' + state);
   }
+}
+
+function showCardProgress(jobId, msg) {
+  const el = document.getElementById('card-progress-' + jobId);
+  if (el) el.style.display = 'flex';
+  setCardMsg(jobId, msg);
+  setStatus(jobId, 'working', '⋯');
+}
+
+function hideCardProgress(jobId) {
+  const el = document.getElementById('card-progress-' + jobId);
+  if (el) el.style.display = 'none';
+}
+
+function setCardMsg(jobId, msg) {
+  const el = document.getElementById('card-msg-' + jobId);
+  if (el) el.textContent = msg;
+}
+
+function disableGenBtn(jobId, disabled) {
+  const btn = document.getElementById('gen-btn-' + jobId);
+  if (btn) btn.disabled = disabled;
 }
 
 function makeDlLink(jobId) {
   const el = document.getElementById('dl-' + jobId);
-  if (!el) return;
+  if (!el || el.tagName === 'A') return;
   const a = document.createElement('a');
   a.href = `/dashboard/api/resumes/${jobId}/download`;
   a.className = 'btn btn-sm';
+  a.id = 'dl-' + jobId;
   a.textContent = 'Download PDF';
   el.replaceWith(a);
 }
 
+function showRegenBtn(jobId) {
+  const genBtn = document.getElementById('gen-btn-' + jobId);
+  if (genBtn) genBtn.style.display = 'none';
+  const actions = document.getElementById('actions-' + jobId);
+  if (!actions) return;
+  // Avoid duplicate regen buttons
+  if (actions.querySelector('.regen-btn')) return;
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-sm btn-secondary regen-btn';
+  btn.textContent = 'Regenerate';
+  btn.onclick = () => generateOne(jobId);
+  actions.appendChild(btn);
+}
+
 function showError(jobId, msg) {
-  // Replace "Pending" button with an error label
   const el = document.getElementById('dl-' + jobId);
-  if (el) {
-    el.textContent = 'Failed';
-    el.className = 'btn btn-sm btn-ghost';
-  }
-  // Inject error message below the card
+  if (el && el.tagName !== 'A') { el.textContent = 'Failed'; el.className = 'btn btn-sm btn-ghost'; }
   const card = document.getElementById('rcard-' + jobId);
   if (!card) return;
   let errEl = card.querySelector('.gen-error');
-  if (!errEl) {
-    errEl = document.createElement('div');
-    errEl.className = 'gen-error';
-    card.appendChild(errEl);
-  }
+  if (!errEl) { errEl = document.createElement('div'); errEl.className = 'gen-error'; card.appendChild(errEl); }
   errEl.textContent = msg;
+}
+
+function showWarning(jobId, msg) {
+  const card = document.getElementById('rcard-' + jobId);
+  if (!card) return;
+  let wEl = card.querySelector('.gen-warning');
+  if (!wEl) { wEl = document.createElement('div'); wEl.className = 'gen-warning'; card.appendChild(wEl); }
+  wEl.textContent = '⚠ ' + msg;
+}
+
+function updateFooter() {
+  const footer = document.getElementById('generate-footer');
+  if (!footer) return;
+  footer.style.display = '';
+  const p = document.getElementById('footer-count');
+  if (p) p.textContent = `${doneCount} resume${doneCount !== 1 ? 's' : ''} ready.`;
+}
+
+// ── Resume editor ─────────────────────────────────────────────────────────────
+let editorJobId = null;
+let editorContent = {};
+let previewTimer = null;
+
+function openEditor(jobId) {
+  editorJobId = jobId;
+  document.getElementById('editor-overlay').classList.add('open');
+  document.getElementById('editor-drawer').classList.add('open');
+  document.getElementById('editor-body').innerHTML = '<p style="color:#6b7280;font-size:14px;padding:20px">Loading...</p>';
+  document.getElementById('editor-iframe').srcdoc = '';
+
+  fetch('/dashboard/api/resumes/' + jobId + '/edit-data')
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { alert(data.error); closeEditor(); return; }
+      editorContent = data.structured;
+      document.getElementById('editor-job-title').textContent = data.job_title + ' — ' + data.company;
+      renderEditorForm();
+      requestPreview();
+    })
+    .catch(() => { alert('Failed to load resume content.'); closeEditor(); });
+}
+
+function closeEditor() {
+  document.getElementById('editor-overlay').classList.remove('open');
+  document.getElementById('editor-drawer').classList.remove('open');
+  editorJobId = null;
+  editorContent = {};
+  clearTimeout(previewTimer);
+}
+
+// ── Form rendering ────────────────────────────────────────────────────────────
+function renderEditorForm() {
+  const s = editorContent;
+  let html = '';
+
+  html += edSection('Summary', `
+    <textarea class="ef-textarea" id="ef-summary" rows="5" oninput="patch('SUMMARY_TEXT', this.value); schedulePreview()"
+    >${esc(s.SUMMARY_TEXT || '')}</textarea>`);
+
+  const compTags = (s.COMPETENCIES || []).join('\n');
+  html += edSection('Core Competencies', `<p class="ef-hint">One keyword per line</p>
+    <textarea class="ef-textarea" id="ef-competencies" rows="6" oninput="patchLines('COMPETENCIES', this.value); schedulePreview()"
+    >${esc(compTags)}</textarea>`);
+
+  html += edSection('Experience', rolesHtml(s.EXPERIENCE || []) +
+    `<button class="btn btn-sm btn-secondary" onclick="addRole()">+ Add Role</button>`);
+
+  html += edSection('Projects', projectsHtml(s.PROJECTS || []) +
+    `<button class="btn btn-sm btn-secondary" onclick="addProject()">+ Add Project</button>`);
+
+  html += edSection('Education', eduHtml(s.EDUCATION || []) +
+    `<button class="btn btn-sm btn-secondary" onclick="addEdu()">+ Add Entry</button>`);
+
+  html += edSection('Skills', skillsHtml(s.SKILLS || []) +
+    `<button class="btn btn-sm btn-secondary" onclick="addSkill()">+ Add Category</button>`);
+
+  if ((s.CERTIFICATIONS || []).length > 0) {
+    html += edSection('Certifications', certsHtml(s.CERTIFICATIONS || []) +
+      `<button class="btn btn-sm btn-secondary" onclick="addCert()">+ Add Cert</button>`);
+  }
+
+  html += `<div class="ef-save-row">
+    <button class="btn btn-primary" onclick="saveContent()" id="btn-editor-save">Save &amp; Regenerate PDF</button>
+    <span id="editor-save-status" class="ef-save-status"></span>
+  </div>`;
+
+  document.getElementById('editor-body').innerHTML = html;
+}
+
+function edSection(title, body) {
+  return `<div class="ef-section"><h3 class="ef-section-title">${title}</h3>${body}</div>`;
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Experience roles ──────────────────────────────────────────────────────────
+function rolesHtml(roles) {
+  return roles.map((r, i) => `
+    <div class="ef-card" id="role-${i}">
+      <div class="ef-card-header">
+        <strong>Role ${i+1}</strong>
+        <button class="ef-remove-btn" onclick="removeRole(${i})">✕</button>
+      </div>
+      <div class="ef-row2">
+        <input class="ef-input" placeholder="Company" value="${esc(r.company)}"
+          oninput="patchRole(${i},'company',this.value)">
+        <input class="ef-input" placeholder="Period (e.g. Jan 2022 – Mar 2024)" value="${esc(r.period)}"
+          oninput="patchRole(${i},'period',this.value)">
+      </div>
+      <input class="ef-input" placeholder="Job Title" value="${esc(r.role)}"
+        oninput="patchRole(${i},'role',this.value)">
+      <p class="ef-hint">One bullet per line</p>
+      <textarea class="ef-textarea" rows="5" oninput="patchRoleBullets(${i},this.value)"
+      >${esc((r.bullets||[]).join('\n'))}</textarea>
+    </div>`).join('');
+}
+
+function addRole() {
+  (editorContent.EXPERIENCE = editorContent.EXPERIENCE || [])
+    .push({company:'',period:'',role:'',bullets:[]});
+  reRenderSection('Experience', rolesHtml(editorContent.EXPERIENCE) +
+    `<button class="btn btn-sm btn-secondary" onclick="addRole()">+ Add Role</button>`);
+  schedulePreview();
+}
+
+function removeRole(i) {
+  editorContent.EXPERIENCE.splice(i, 1);
+  reRenderSection('Experience', rolesHtml(editorContent.EXPERIENCE) +
+    `<button class="btn btn-sm btn-secondary" onclick="addRole()">+ Add Role</button>`);
+  schedulePreview();
+}
+
+function patchRole(i, field, val) {
+  if (editorContent.EXPERIENCE && editorContent.EXPERIENCE[i])
+    editorContent.EXPERIENCE[i][field] = val;
+  schedulePreview();
+}
+
+function patchRoleBullets(i, text) {
+  if (editorContent.EXPERIENCE && editorContent.EXPERIENCE[i])
+    editorContent.EXPERIENCE[i].bullets = text.split('\n').map(l=>l.trim()).filter(Boolean);
+  schedulePreview();
+}
+
+// ── Projects ──────────────────────────────────────────────────────────────────
+function projectsHtml(projs) {
+  return projs.map((p, i) => `
+    <div class="ef-card">
+      <div class="ef-card-header"><strong>Project ${i+1}</strong>
+        <button class="ef-remove-btn" onclick="removeProject(${i})">✕</button></div>
+      <div class="ef-row2">
+        <input class="ef-input" placeholder="Name" value="${esc(p.name)}"
+          oninput="patchProj(${i},'name',this.value)">
+        <input class="ef-input" placeholder="Badge (Live / Open Source)" value="${esc(p.badge)}"
+          oninput="patchProj(${i},'badge',this.value)" style="max-width:160px">
+      </div>
+      <input class="ef-input" placeholder="One-sentence description with metric" value="${esc(p.description)}"
+        oninput="patchProj(${i},'description',this.value)">
+      <input class="ef-input" placeholder="Tech stack (Python · React · PostgreSQL)" value="${esc(p.tech)}"
+        oninput="patchProj(${i},'tech',this.value)">
+    </div>`).join('');
+}
+
+function addProject() {
+  (editorContent.PROJECTS = editorContent.PROJECTS || [])
+    .push({name:'',badge:'',description:'',tech:''});
+  reRenderSection('Projects', projectsHtml(editorContent.PROJECTS) +
+    `<button class="btn btn-sm btn-secondary" onclick="addProject()">+ Add Project</button>`);
+  schedulePreview();
+}
+
+function removeProject(i) {
+  editorContent.PROJECTS.splice(i, 1);
+  reRenderSection('Projects', projectsHtml(editorContent.PROJECTS) +
+    `<button class="btn btn-sm btn-secondary" onclick="addProject()">+ Add Project</button>`);
+  schedulePreview();
+}
+
+function patchProj(i, field, val) {
+  if (editorContent.PROJECTS && editorContent.PROJECTS[i])
+    editorContent.PROJECTS[i][field] = val;
+  schedulePreview();
+}
+
+// ── Education ─────────────────────────────────────────────────────────────────
+function eduHtml(items) {
+  return items.map((e, i) => `
+    <div class="ef-card">
+      <div class="ef-card-header"><strong>Entry ${i+1}</strong>
+        <button class="ef-remove-btn" onclick="removeEdu(${i})">✕</button></div>
+      <div class="ef-row2">
+        <input class="ef-input" placeholder="Degree / Qualification" value="${esc(e.degree)}"
+          oninput="patchEdu(${i},'degree',this.value)">
+        <input class="ef-input" placeholder="Year (2020 – 2022)" value="${esc(e.year)}"
+          oninput="patchEdu(${i},'year',this.value)" style="max-width:150px">
+      </div>
+      <input class="ef-input" placeholder="Institution" value="${esc(e.org)}"
+        oninput="patchEdu(${i},'org',this.value)">
+      <input class="ef-input" placeholder="Relevant modules or dissertation note (optional)" value="${esc(e.description)}"
+        oninput="patchEdu(${i},'description',this.value)">
+    </div>`).join('');
+}
+
+function addEdu() {
+  (editorContent.EDUCATION = editorContent.EDUCATION || [])
+    .push({degree:'',org:'',year:'',description:''});
+  reRenderSection('Education', eduHtml(editorContent.EDUCATION) +
+    `<button class="btn btn-sm btn-secondary" onclick="addEdu()">+ Add Entry</button>`);
+  schedulePreview();
+}
+
+function removeEdu(i) {
+  editorContent.EDUCATION.splice(i, 1);
+  reRenderSection('Education', eduHtml(editorContent.EDUCATION) +
+    `<button class="btn btn-sm btn-secondary" onclick="addEdu()">+ Add Entry</button>`);
+  schedulePreview();
+}
+
+function patchEdu(i, field, val) {
+  if (editorContent.EDUCATION && editorContent.EDUCATION[i])
+    editorContent.EDUCATION[i][field] = val;
+  schedulePreview();
+}
+
+// ── Skills ────────────────────────────────────────────────────────────────────
+function skillsHtml(rows) {
+  return rows.map((r, i) => `
+    <div class="ef-row2 ef-skill-row">
+      <input class="ef-input" placeholder="Category (e.g. Languages)" value="${esc(r.category)}"
+        oninput="patchSkill(${i},'category',this.value)" style="max-width:160px">
+      <input class="ef-input" placeholder="Items (Python, JavaScript, ...)" value="${esc(r.items)}"
+        oninput="patchSkill(${i},'items',this.value)">
+      <button class="ef-remove-btn" onclick="removeSkill(${i})">✕</button>
+    </div>`).join('');
+}
+
+function addSkill() {
+  (editorContent.SKILLS = editorContent.SKILLS || []).push({category:'',items:''});
+  reRenderSection('Skills', skillsHtml(editorContent.SKILLS) +
+    `<button class="btn btn-sm btn-secondary" onclick="addSkill()">+ Add Category</button>`);
+  schedulePreview();
+}
+
+function removeSkill(i) {
+  editorContent.SKILLS.splice(i, 1);
+  reRenderSection('Skills', skillsHtml(editorContent.SKILLS) +
+    `<button class="btn btn-sm btn-secondary" onclick="addSkill()">+ Add Category</button>`);
+  schedulePreview();
+}
+
+function patchSkill(i, field, val) {
+  if (editorContent.SKILLS && editorContent.SKILLS[i])
+    editorContent.SKILLS[i][field] = val;
+  schedulePreview();
+}
+
+// ── Certifications ────────────────────────────────────────────────────────────
+function certsHtml(certs) {
+  return certs.map((c, i) => `
+    <div class="ef-card">
+      <div class="ef-card-header"><strong>Cert ${i+1}</strong>
+        <button class="ef-remove-btn" onclick="removeCert(${i})">✕</button></div>
+      <div class="ef-row2">
+        <input class="ef-input" placeholder="Certification name" value="${esc(c.title)}"
+          oninput="patchCert(${i},'title',this.value)">
+        <input class="ef-input" placeholder="Issuer" value="${esc(c.org)}"
+          oninput="patchCert(${i},'org',this.value)">
+        <input class="ef-input" placeholder="Year" value="${esc(c.year)}"
+          oninput="patchCert(${i},'year',this.value)" style="max-width:90px">
+      </div>
+    </div>`).join('');
+}
+
+function addCert() {
+  (editorContent.CERTIFICATIONS = editorContent.CERTIFICATIONS || [])
+    .push({title:'',org:'',year:''});
+  reRenderSection('Certifications', certsHtml(editorContent.CERTIFICATIONS) +
+    `<button class="btn btn-sm btn-secondary" onclick="addCert()">+ Add Cert</button>`);
+  schedulePreview();
+}
+
+function removeCert(i) {
+  editorContent.CERTIFICATIONS.splice(i, 1);
+  reRenderSection('Certifications', certsHtml(editorContent.CERTIFICATIONS) +
+    `<button class="btn btn-sm btn-secondary" onclick="addCert()">+ Add Cert</button>`);
+  schedulePreview();
+}
+
+function patchCert(i, field, val) {
+  if (editorContent.CERTIFICATIONS && editorContent.CERTIFICATIONS[i])
+    editorContent.CERTIFICATIONS[i][field] = val;
+  schedulePreview();
+}
+
+// ── Patch helpers ─────────────────────────────────────────────────────────────
+function patch(key, val) { editorContent[key] = val; }
+
+function patchLines(key, text) {
+  editorContent[key] = text.split('\n').map(l=>l.trim()).filter(Boolean);
+}
+
+function reRenderSection(title, body) {
+  // Find and update just the section body to avoid losing focus elsewhere
+  const sections = document.querySelectorAll('.ef-section');
+  for (const sec of sections) {
+    const h = sec.querySelector('.ef-section-title');
+    if (h && h.textContent === title) {
+      sec.innerHTML = `<h3 class="ef-section-title">${title}</h3>${body}`;
+      return;
+    }
+  }
+}
+
+// ── Live preview ──────────────────────────────────────────────────────────────
+function schedulePreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(requestPreview, 700);
+}
+
+function requestPreview() {
+  if (!editorJobId) return;
+  const label = document.getElementById('preview-status');
+  if (label) label.textContent = 'Updating...';
+
+  fetch('/dashboard/api/resumes/' + editorJobId + '/preview', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({structured: editorContent}),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.html) {
+      document.getElementById('editor-iframe').srcdoc = data.html;
+      if (label) label.textContent = '';
+    }
+  })
+  .catch(() => { if (label) label.textContent = 'Preview error'; });
+}
+
+// ── Save ──────────────────────────────────────────────────────────────────────
+function saveContent() {
+  if (!editorJobId) return;
+  const btn = document.getElementById('btn-editor-save');
+  const status = document.getElementById('editor-save-status');
+  btn.disabled = true;
+  status.textContent = 'Saving & generating PDF...';
+
+  fetch('/dashboard/api/resumes/' + editorJobId + '/save-content', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({structured: editorContent}),
+  })
+  .then(r => r.json())
+  .then(data => {
+    btn.disabled = false;
+    if (data.ok) {
+      status.textContent = 'Saved ✓';
+      // Refresh the download link
+      const dl = document.getElementById('dl-' + editorJobId);
+      if (dl) {
+        dl.href = '/dashboard/api/resumes/' + editorJobId + '/download';
+        dl.textContent = 'Download PDF';
+        dl.className = 'btn btn-sm';
+      }
+      setTimeout(() => { status.textContent = ''; }, 3000);
+    } else {
+      status.textContent = 'Error: ' + (data.error || 'Unknown');
+    }
+  })
+  .catch(() => { btn.disabled = false; status.textContent = 'Network error'; });
 }
 </script>
 {% endblock %}

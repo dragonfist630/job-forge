@@ -24,10 +24,55 @@ import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 from pathlib import Path
 
 import config_manager
 import scraper
+
+# ── per-job generation state ──────────────────────────────────────────────────
+# Each independently-triggered job gets its own entry: {proc, stopped}
+_jobs: dict[str, dict] = {}
+_jobs_lock = threading.Lock()
+
+# Global state for "Generate All" sequential flow
+_paused = False
+_stopped = False
+_active = False
+_state_lock = threading.Lock()
+
+
+def set_paused(val: bool):
+    global _paused
+    _paused = val
+
+
+def set_stopped(val: bool):
+    global _stopped
+    _stopped = val
+
+
+def is_generating() -> bool:
+    return _active
+
+
+def stop_job(job_id: str) -> bool:
+    """Terminate a per-job generation subprocess and mark it stopped."""
+    with _jobs_lock:
+        state = _jobs.get(job_id)
+        if not state:
+            return False
+        state["stopped"] = True
+        proc = state.get("proc")
+        if proc and proc.poll() is None:
+            proc.terminate()
+    return True
+
+
+def is_job_generating(job_id: str) -> bool:
+    with _jobs_lock:
+        return job_id in _jobs
 
 # Use .resolve() so paths are always absolute regardless of how the module is imported
 DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -338,6 +383,228 @@ def _ensure_dirs():
     RESUMES_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _save_resume_content(job_id: str, values: dict):
+    """Persist Claude's raw values dict so the editor can load and modify it."""
+    _ensure_dirs()
+    path = RESUMES_DIR / f"{job_id}-content.json"
+    path.write_text(json.dumps(values, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def get_resume_content(job_id: str) -> dict | None:
+    path = RESUMES_DIR / f"{job_id}-content.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _tag_text(html: str, tag: str, cls: str) -> str:
+    """Extract plain text from first element matching tag + class."""
+    m = re.search(
+        rf'<{tag}[^>]*class="[^"]*{re.escape(cls)}[^"]*"[^>]*>(.*?)</{tag}>',
+        html, re.DOTALL
+    )
+    return re.sub(r"<[^>]+>", "", m.group(1)).strip() if m else ""
+
+
+def values_to_structured(values: dict) -> dict:
+    """Parse HTML values dict → editor-friendly structured dict."""
+    s: dict = {}
+
+    if "SUMMARY_TEXT" in values:
+        s["SUMMARY_TEXT"] = re.sub(r"<[^>]+>", " ", values["SUMMARY_TEXT"]).strip()
+
+    if "COMPETENCIES" in values:
+        tags = re.findall(
+            r'class="competency-tag"[^>]*>(.*?)</span>', values["COMPETENCIES"], re.DOTALL
+        )
+        s["COMPETENCIES"] = [re.sub(r"<[^>]+>", "", t).strip() for t in tags if t.strip()]
+
+    if "EXPERIENCE" in values:
+        roles = []
+        for block in re.split(r'(?=<div class="job">)', values["EXPERIENCE"]):
+            if '<div class="job">' not in block:
+                continue
+            bullets = [
+                re.sub(r"<[^>]+>", "", li).strip()
+                for li in re.findall(r"<li>(.*?)</li>", block, re.DOTALL)
+                if li.strip()
+            ]
+            company = _tag_text(block, "span", "job-company")
+            period = _tag_text(block, "span", "job-period")
+            role_title = _tag_text(block, "div", "job-role")
+            if company or role_title:
+                roles.append({"company": company, "period": period,
+                               "role": role_title, "bullets": bullets})
+        s["EXPERIENCE"] = roles
+
+    if "PROJECTS" in values:
+        projects = []
+        for block in re.split(r'(?=<div class="project">)', values["PROJECTS"]):
+            if '<div class="project">' not in block:
+                continue
+            name = _tag_text(block, "span", "project-title")
+            if name:
+                projects.append({
+                    "name": name,
+                    "badge": _tag_text(block, "span", "project-badge"),
+                    "description": _tag_text(block, "div", "project-desc"),
+                    "tech": _tag_text(block, "div", "project-tech"),
+                })
+        s["PROJECTS"] = projects
+
+    if "EDUCATION" in values:
+        edu_list = []
+        for block in re.split(r'(?=<div class="edu-item">)', values["EDUCATION"]):
+            if '<div class="edu-item">' not in block:
+                continue
+            degree = _tag_text(block, "span", "edu-title")
+            org = _tag_text(block, "span", "edu-org")
+            if degree or org:
+                edu_list.append({
+                    "degree": degree, "org": org,
+                    "year": _tag_text(block, "span", "edu-year"),
+                    "description": _tag_text(block, "div", "edu-desc"),
+                })
+        s["EDUCATION"] = edu_list
+
+    if "CERTIFICATIONS" in values:
+        certs = []
+        for block in re.split(r'(?=<div class="cert-item">)', values["CERTIFICATIONS"]):
+            if '<div class="cert-item">' not in block:
+                continue
+            title = _tag_text(block, "span", "cert-title")
+            if title:
+                certs.append({
+                    "title": title,
+                    "org": _tag_text(block, "span", "cert-org"),
+                    "year": _tag_text(block, "span", "cert-year"),
+                })
+        s["CERTIFICATIONS"] = certs
+
+    if "SKILLS" in values:
+        rows = re.findall(
+            r'<span class="skill-category">(.*?):</span>\s*(.*?)</span>',
+            values["SKILLS"], re.DOTALL
+        )
+        s["SKILLS"] = [
+            {"category": re.sub(r"<[^>]+>", "", cat).strip(),
+             "items": re.sub(r"<[^>]+>", "", items).strip()}
+            for cat, items in rows
+        ]
+
+    return s
+
+
+def structured_to_values(structured: dict) -> dict:
+    """Convert editor structured dict → HTML values dict for template filling."""
+    import html as _html
+
+    def esc(text) -> str:
+        return _html.escape(str(text or ""))
+
+    values: dict = {}
+
+    if "SUMMARY_TEXT" in structured:
+        values["SUMMARY_TEXT"] = esc(structured["SUMMARY_TEXT"])
+
+    if "COMPETENCIES" in structured:
+        tags = structured["COMPETENCIES"]
+        if isinstance(tags, str):
+            tags = [t.strip() for t in tags.split(",") if t.strip()]
+        values["COMPETENCIES"] = "".join(
+            f'<span class="competency-tag">{esc(t)}</span>' for t in tags if str(t).strip()
+        )
+
+    if "EXPERIENCE" in structured:
+        html = ""
+        for role in structured["EXPERIENCE"]:
+            bullets = role.get("bullets", [])
+            if isinstance(bullets, str):
+                bullets = [b for b in bullets.splitlines() if b.strip()]
+            bullets_html = "".join(f"<li>{esc(b)}</li>" for b in bullets if str(b).strip())
+            html += (
+                f'<div class="job">'
+                f'<div class="job-header">'
+                f'<span class="job-company">{esc(role.get("company",""))}</span>'
+                f'<span class="job-period">{esc(role.get("period",""))}</span>'
+                f'</div>'
+                f'<div class="job-role">{esc(role.get("role",""))}</div>'
+                f'<ul>{bullets_html}</ul>'
+                f'</div>'
+            )
+        values["EXPERIENCE"] = html
+
+    if "PROJECTS" in structured:
+        html = ""
+        for proj in structured["PROJECTS"]:
+            badge = proj.get("badge", "")
+            badge_html = f'<span class="project-badge">{esc(badge)}</span>' if badge else ""
+            html += (
+                f'<div class="project">'
+                f'<div><span class="project-title">{esc(proj.get("name",""))}</span>{badge_html}</div>'
+                f'<div class="project-desc">{esc(proj.get("description",""))}</div>'
+                f'<div class="project-tech">{esc(proj.get("tech",""))}</div>'
+                f'</div>'
+            )
+        values["PROJECTS"] = html
+
+    if "EDUCATION" in structured:
+        html = ""
+        for edu in structured["EDUCATION"]:
+            html += (
+                f'<div class="edu-item">'
+                f'<div class="edu-header">'
+                f'<div><span class="edu-title">{esc(edu.get("degree",""))}</span>'
+                f' — <span class="edu-org">{esc(edu.get("org",""))}</span></div>'
+                f'<span class="edu-year">{esc(edu.get("year",""))}</span>'
+                f'</div>'
+                f'<div class="edu-desc">{esc(edu.get("description",""))}</div>'
+                f'</div>'
+            )
+        values["EDUCATION"] = html
+
+    if "CERTIFICATIONS" in structured:
+        html = ""
+        for cert in structured["CERTIFICATIONS"]:
+            html += (
+                f'<div class="cert-item">'
+                f'<div><span class="cert-title">{esc(cert.get("title",""))}</span>'
+                f' — <span class="cert-org">{esc(cert.get("org",""))}</span></div>'
+                f'<span class="cert-year">{esc(cert.get("year",""))}</span>'
+                f'</div>'
+            )
+        values["CERTIFICATIONS"] = html
+
+    if "SKILLS" in structured:
+        spans = ""
+        for row in structured["SKILLS"]:
+            cat = row.get("category", "")
+            items = row.get("items", "")
+            spans += (f'<span class="skill-item">'
+                      f'<span class="skill-category">{esc(cat)}:</span> {esc(items)}'
+                      f'</span>')
+        values["SKILLS"] = f'<div class="skills-grid">{spans}</div>'
+
+    return values
+
+
+def render_resume_html(job: dict, settings: dict, values: dict) -> str:
+    """Re-render resume HTML from a values dict — no Claude call."""
+    template_html = config_manager.read_resume_template(settings)
+    if not template_html:
+        raise ValueError("cv-template.html not found in job-forge/templates/")
+    prefilled = _prefill_from_context(job, settings)
+    html = template_html
+    for key, val in prefilled.items():
+        html = html.replace("{{" + key + "}}", str(val) if val is not None else "")
+    for key, val in values.items():
+        html = html.replace("{{" + key + "}}", str(val) if val is not None else "")
+    return html
+
+
 def get_resumes() -> dict:
     _ensure_dirs()
     if not RESUMES_INDEX.exists():
@@ -359,10 +626,10 @@ def _slug(text: str, max_len: int = 30) -> str:
     return text[:max_len]
 
 
-def _call_claude_cli(system_prompt: str, user_message: str) -> str:
+def _call_claude_cli(system_prompt: str, user_message: str, proc_callback=None) -> str:
     """
-    Run `claude -p` (Claude Code CLI) with the given prompts.
-    Uses the active Claude Code subscription — no separate API key needed.
+    Run `claude -p` using Popen so callers can register the proc for stop support.
+    proc_callback(proc) is called immediately after Popen, before communicate().
     """
     claude_bin = shutil.which("claude")
     if not claude_bin:
@@ -370,23 +637,35 @@ def _call_claude_cli(system_prompt: str, user_message: str) -> str:
             "claude CLI not found in PATH. Make sure Claude Code is installed."
         )
 
-    result = subprocess.run(
+    proc = subprocess.Popen(
         [claude_bin, "--system-prompt", system_prompt, "-p"],
-        input=user_message,
-        capture_output=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
-        timeout=600,
     )
+    if proc_callback:
+        proc_callback(proc)
 
-    if result.returncode != 0:
-        err = result.stderr.strip() or f"claude CLI exited with code {result.returncode}"
+    try:
+        stdout, stderr = proc.communicate(input=user_message, timeout=600)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        raise RuntimeError("Claude CLI timed out after 600s")
+
+    # returncode < 0 means killed/terminated by signal (stop requested)
+    if proc.returncode < 0:
+        raise RuntimeError("__stopped__")
+    if proc.returncode != 0:
+        err = stderr.strip() or f"claude CLI exited with code {proc.returncode}"
         raise RuntimeError(err)
 
-    return result.stdout.strip()
+    return stdout.strip()
 
 
-def generate_resume(job: dict, settings: dict) -> dict:
+def generate_resume(job: dict, settings: dict, proc_callback=None) -> dict:
     """
     Generate one tailored PDF resume for a job using career-ops' full mode files.
     Returns {"job_id": ..., "pdf_path": ..., "ok": True/False, "error": "..."}
@@ -428,7 +707,7 @@ def generate_resume(job: dict, settings: dict) -> dict:
     user_message = _build_user_message(cv_text, jd_text, partial_html, skip_keys=set(prefilled))
 
     try:
-        raw_response = _call_claude_cli(system_prompt, user_message)
+        raw_response = _call_claude_cli(system_prompt, user_message, proc_callback=proc_callback)
     except Exception as e:
         return {"job_id": job_id, "ok": False, "error": f"Claude CLI error: {e}"}
 
@@ -444,6 +723,9 @@ def generate_resume(job: dict, settings: dict) -> dict:
         values = json.loads(m.group())
     except json.JSONDecodeError as e:
         return {"job_id": job_id, "ok": False, "error": f"Claude returned invalid JSON: {e}"}
+
+    # Save content JSON for editor
+    _save_resume_content(job_id, values)
 
     # Plan 4: audit generated content against structured CV
     audit_warnings = []
@@ -518,45 +800,186 @@ def generate_resume(job: dict, settings: dict) -> dict:
 
 # ── SSE stream ────────────────────────────────────────────────────────────────
 
-def stream_generate(settings: dict):
+def stream_generate(settings: dict, job_ids: list[str] | None = None):
     """
     Generator — yields SSE strings.
-    Processes all approved jobs, generates one PDF per job.
+    job_ids=None  → all approved jobs not yet in resumes index (Generate All)
+    job_ids=[...] → exactly those job IDs (per-job generate / regenerate)
+
+    Checks _paused/_stopped flags between jobs.
+    Yields {"type":"ping"} keepalives while paused (prevents SSE timeout).
     """
+    global _active, _paused, _stopped
+
+    with _state_lock:
+        if _active:
+            yield f"data: {json.dumps({'type': 'error', 'msg': 'Generation already in progress'})}\n\n"
+            return
+        _active = True
+        _paused = False
+        _stopped = False
 
     def sse(obj: dict) -> str:
         return f"data: {json.dumps(obj)}\n\n"
 
-    all_jobs = scraper.get_jobs()
-    approved = scraper.get_approvals()
-    approved_jobs = [j for j in all_jobs if j["job_id"] in approved]
+    try:
+        all_jobs = scraper.get_jobs()
+        approved = scraper.get_approvals()
+        index = get_resumes()
 
-    if not approved_jobs:
-        yield sse({"type": "error", "msg": "No approved jobs. Go back and approve some jobs first."})
-        return
+        if job_ids is not None:
+            job_map = {j["job_id"]: j for j in all_jobs}
+            target_jobs = [job_map[jid] for jid in job_ids if jid in job_map and jid in approved]
+        else:
+            # Generate All: skip already-done jobs
+            target_jobs = [j for j in all_jobs if j["job_id"] in approved and j["job_id"] not in index]
 
-    yield sse({"type": "start", "total": len(approved_jobs)})
+        if not target_jobs:
+            yield sse({"type": "error", "msg": "No jobs to generate. Approve jobs first, or all approved jobs already have resumes."})
+            return
 
-    index = get_resumes()
-    done = 0
+        yield sse({"type": "start", "total": len(target_jobs)})
+        done = 0
 
-    for job in approved_jobs:
-        job_id = job["job_id"]
+        for job in target_jobs:
+            # Stop check before each job
+            with _state_lock:
+                if _stopped:
+                    yield sse({"type": "stopped", "done": done})
+                    return
+
+            # Pause loop — send keepalives so SSE connection stays alive
+            while True:
+                with _state_lock:
+                    is_paused = _paused
+                if not is_paused:
+                    break
+                yield sse({"type": "ping"})
+                time.sleep(2)
+
+            job_id = job["job_id"]
+            title = job.get("title", "?")
+            company = job.get("company", "?")
+
+            yield sse({
+                "type": "progress",
+                "job_id": job_id,
+                "msg": f'Tailoring CV for "{title}" at {company}...',
+            })
+
+            result = generate_resume(job, settings)
+
+            if result["ok"]:
+                index[job_id] = result["pdf_path"]
+                _save_resumes(index)
+                done += 1
+                yield sse({
+                    "type": "done_job",
+                    "job_id": job_id,
+                    "title": title,
+                    "company": company,
+                    "pdf_name": result["pdf_name"],
+                    "ok": True,
+                    "audit_warnings": result.get("audit_warnings", []),
+                })
+            else:
+                yield sse({
+                    "type": "done_job",
+                    "job_id": job_id,
+                    "title": title,
+                    "company": company,
+                    "ok": False,
+                    "error": result["error"],
+                })
+
+        yield sse({"type": "complete", "succeeded": done, "total": len(target_jobs)})
+
+    finally:
+        with _state_lock:
+            _active = False
+            _paused = False
+            _stopped = False
+
+
+def stream_generate_single(settings: dict, job_id: str):
+    """
+    SSE generator for a single job. Supports stop mid-generation via stop_job().
+    Multiple concurrent calls with different job_ids are allowed.
+    """
+    with _jobs_lock:
+        if job_id in _jobs:
+            yield f"data: {json.dumps({'type': 'error', 'msg': 'Already generating this job'})}\n\n"
+            return
+        _jobs[job_id] = {"proc": None, "stopped": False}
+
+    def sse(obj: dict) -> str:
+        return f"data: {json.dumps(obj)}\n\n"
+
+    def register_proc(proc):
+        with _jobs_lock:
+            if job_id in _jobs:
+                _jobs[job_id]["proc"] = proc
+
+    try:
+        all_jobs = scraper.get_jobs()
+        job_map = {j["job_id"]: j for j in all_jobs}
+        approved = scraper.get_approvals()
+
+        if job_id not in job_map or job_id not in approved:
+            yield sse({"type": "error", "msg": "Job not found or not approved"})
+            return
+
+        job = job_map[job_id]
         title = job.get("title", "?")
         company = job.get("company", "?")
 
+        yield sse({"type": "start", "total": 1})
         yield sse({
             "type": "progress",
             "job_id": job_id,
-            "msg": f'Tailoring CV for "{title}" at {company} (archetype detection + keyword injection)...',
+            "msg": f'Tailoring CV for "{title}" at {company}...',
         })
 
-        result = generate_resume(job, settings)
+        # Run generation in daemon thread so we can yield keepalives + watch stop flag
+        result_box: list = [None]
+        error_box: list = [None]
 
+        def run():
+            try:
+                result_box[0] = generate_resume(job, settings, proc_callback=register_proc)
+            except Exception as exc:
+                error_box[0] = str(exc)
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+
+        while t.is_alive():
+            with _jobs_lock:
+                if _jobs.get(job_id, {}).get("stopped"):
+                    break
+            yield sse({"type": "ping"})
+            time.sleep(2)
+
+        t.join()
+
+        # Check stopped (set by stop_job OR by proc returning -signal)
+        with _jobs_lock:
+            stopped = _jobs.get(job_id, {}).get("stopped", False)
+        if stopped or error_box[0] == "__stopped__":
+            yield sse({"type": "stopped", "job_id": job_id})
+            return
+
+        if error_box[0]:
+            yield sse({"type": "done_job", "job_id": job_id, "ok": False,
+                        "error": error_box[0], "title": title, "company": company})
+            yield sse({"type": "complete", "succeeded": 0, "total": 1})
+            return
+
+        result = result_box[0]
         if result["ok"]:
+            index = get_resumes()
             index[job_id] = result["pdf_path"]
             _save_resumes(index)
-            done += 1
             yield sse({
                 "type": "done_job",
                 "job_id": job_id,
@@ -576,4 +999,10 @@ def stream_generate(settings: dict):
                 "error": result["error"],
             })
 
-    yield sse({"type": "complete", "succeeded": done, "total": len(approved_jobs)})
+        yield sse({"type": "complete",
+                   "succeeded": 1 if result["ok"] else 0,
+                   "total": 1})
+
+    finally:
+        with _jobs_lock:
+            _jobs.pop(job_id, None)
