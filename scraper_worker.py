@@ -111,12 +111,21 @@ def build_search_url(term: str, settings: dict) -> str:
 
 
 # ── Browser setup ─────────────────────────────────────────────────────────────
-def _cdp_chrome_version(host: str = "host.docker.internal", port: int = 9222) -> str:
-    """Return Chrome browser string from CDP endpoint, e.g. 'Chrome/148.0.7778.178'."""
+def _resolve_host(hostname: str) -> str:
+    """Resolve hostname to IP — Chrome DevTools rejects non-IP Host headers."""
+    import socket
+    try:
+        return socket.gethostbyname(hostname)
+    except Exception:
+        return hostname
+
+
+def _cdp_chrome_version(host_ip: str, port: int = 9222) -> str:
+    """Return Chrome browser string from CDP endpoint using a numeric IP."""
     import urllib.request
     import json as _j
     try:
-        with urllib.request.urlopen(f"http://{host}:{port}/json/version", timeout=5) as r:
+        with urllib.request.urlopen(f"http://{host_ip}:{port}/json/version", timeout=5) as r:
             return _j.loads(r.read()).get("Browser", "")
     except Exception:
         return ""
@@ -132,10 +141,13 @@ def setup_driver(run_in_background: bool = False, profile_dir: str = None):
     # Docker mode: attach to host Chrome launched by JobForge.bat/.command
     # with --remote-debugging-port=9222. No new Chrome launched.
     if os.environ.get("JOBFORGE_DOCKER"):
-        browser_str = _cdp_chrome_version()
+        # Resolve to IP first — Chrome's DevTools HTTP server rejects requests
+        # where the Host header is a non-IP hostname (DNS-rebinding protection).
+        host_ip = _resolve_host("host.docker.internal")
+        browser_str = _cdp_chrome_version(host_ip)
         if not browser_str:
             raise RuntimeError(
-                "Cannot reach Chrome at host.docker.internal:9222. "
+                f"Cannot reach Chrome at {host_ip}:9222 (host.docker.internal). "
                 "Make sure you launched JobForge via JobForge.command "
                 "(not 'python main.py' directly) — the launcher starts Chrome "
                 "with the required remote-debugging port."
@@ -146,7 +158,7 @@ def setup_driver(run_in_background: bool = False, profile_dir: str = None):
             chrome_ver = None
 
         options = Options()
-        options.debugger_address = "host.docker.internal:9222"
+        options.debugger_address = f"{host_ip}:9222"
         try:
             mgr_path = (
                 ChromeDriverManager(driver_version=chrome_ver).install()
