@@ -10,97 +10,73 @@ echo   ^|    JobForge                          ^|
 echo  ==========================================
 echo.
 
-REM ── Check Python ──────────────────────────────────────────
-where python >nul 2>&1
+REM ── Check Docker ───────────────────────────────────────────
+where docker >nul 2>&1
 if errorlevel 1 (
-    echo   [!] Python not found. Installing via winget...
-    winget install Python.Python.3.11 -e --silent
-    if errorlevel 1 (
-        echo   [X] Could not install Python automatically.
-        echo       Please download from https://www.python.org/downloads/
-        pause & exit /b 1
-    )
-    call refreshenv 2>nul
-    where python >nul 2>&1
-    if errorlevel 1 (
-        echo   [!] Please restart this file after Python finishes installing.
-        pause & exit /b 1
-    )
-)
-for /f "tokens=*" %%v in ('python --version 2^>^&1') do set PYVER=%%v
-echo   [OK] %PYVER%
-
-REM ── Require Python 3.10+ ──────────────────────────────────
-python -c "import sys; exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
-if errorlevel 1 (
-    echo.
-    echo   [X] JobForge needs Python 3.10 or newer.
-    echo       You have: %PYVER%
-    echo.
-    echo       Download Python 3.11 from:
-    echo       https://www.python.org/downloads/
-    echo.
-    echo       When installing, tick "Add Python to PATH".
-    echo       Then close and re-open this file.
+    echo   [X] Docker Desktop not found.
+    echo       Download from: https://www.docker.com/products/docker-desktop/
+    echo       Install it, then double-click this file again.
     echo.
     pause & exit /b 1
 )
-
-REM ── Check Node.js ─────────────────────────────────────────
-where node >nul 2>&1
+docker info >nul 2>&1
 if errorlevel 1 (
-    echo   [!] Node.js not found. Installing via winget...
-    winget install OpenJS.NodeJS.LTS -e --silent
-    call refreshenv 2>nul
-    where node >nul 2>&1
-    if errorlevel 1 (
-        echo   [!] Please restart this file after Node.js finishes installing.
-        pause & exit /b 1
+    echo   [X] Docker Desktop is installed but not running.
+    echo       Open Docker Desktop from your Start Menu, wait for it to
+    echo       fully start ^(whale icon in taskbar^), then try again.
+    echo.
+    pause & exit /b 1
+)
+echo   [OK] Docker Desktop
+
+REM ── Find Chrome ────────────────────────────────────────────
+set "CHROME_EXE="
+for %%P in (
+    "%ProgramFiles%\Google\Chrome\Application\chrome.exe"
+    "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
+    "%LocalAppData%\Google\Chrome\Application\chrome.exe"
+) do (
+    if exist %%P (
+        if "!CHROME_EXE!"=="" set "CHROME_EXE=%%~P"
     )
 )
-for /f "tokens=*" %%v in ('node --version 2^>^&1') do echo   [OK] Node.js %%v
-
-REM ── Install Python packages if needed ─────────────────────
-python -c "import flask, yaml, selenium, webdriver_manager" >nul 2>&1
-if errorlevel 1 (
-    echo   [->] Installing Python packages (one-time setup)...
-    pip install -r requirements.txt
-    if errorlevel 1 (
-        echo   [X] Failed to install packages. Check your internet connection.
-        pause & exit /b 1
-    )
+if "!CHROME_EXE!"=="" (
+    echo   [X] Google Chrome not found.
+    echo       Download from: https://www.google.com/chrome/
+    echo.
+    pause & exit /b 1
 )
-echo   [OK] Python packages
+echo   [OK] Chrome
 
-REM ── Install Playwright + Chromium if needed ───────────────
-set CAREER_OPS=%~dp0..\career-ops
-if exist "%CAREER_OPS%\package.json" (
-    if not exist "%CAREER_OPS%\node_modules" (
-        echo   [->] Installing Playwright (downloads a browser, one-time)...
-        pushd "%CAREER_OPS%"
-        call npm install --silent 2>nul
-        call npx playwright install chromium 2>nul
-        popd
-    )
-    echo   [OK] Playwright
-)
+REM ── Launch Chrome with remote debugging ────────────────────
+echo   [->] Starting Chrome...
+start "" "!CHROME_EXE!" --remote-debugging-port=9222 --user-data-dir="%~dp0chrome-profile" --no-first-run --no-default-browser-check
+timeout /t 3 /nobreak >nul
 
-REM ── Start JobForge ─────────────────────────────────────────
-echo.
-echo  ==========================================
-echo   Starting JobForge...
-echo   Browser will open at http://localhost:7070
-echo   Close this window to stop.
-echo  ==========================================
-echo.
-
-python main.py
+REM ── Build + start Docker container ─────────────────────────
+echo   [->] Building and starting JobForge ^(first run takes a few minutes^)...
+docker compose up -d --build
 if errorlevel 1 (
     echo.
-    echo   [X] JobForge crashed. Error shown above.
-    echo       Screenshot this window and share with support.
+    echo   [X] Failed to start JobForge container.
+    echo       Make sure Docker Desktop is running and try again.
+    echo.
+    pause & exit /b 1
 )
+echo   [OK] JobForge started
+
+REM ── Wait for Flask then open browser ───────────────────────
+echo   [->] Waiting for JobForge to be ready...
+timeout /t 5 /nobreak >nul
+start http://localhost:7070
 
 echo.
-echo   JobForge stopped.
+echo  ==========================================
+echo   JobForge is running!
+echo   Open: http://localhost:7070
+echo.
+echo   To STOP JobForge:
+echo     docker compose down
+echo  ==========================================
+echo.
 pause

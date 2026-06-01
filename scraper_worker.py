@@ -118,6 +118,17 @@ def setup_driver(run_in_background: bool = False, profile_dir: str = None):
     from selenium.webdriver.support.ui import WebDriverWait
     from webdriver_manager.chrome import ChromeDriverManager
 
+    # Docker mode: attach to host Chrome launched by JobForge.bat/.command
+    # with --remote-debugging-port=9222. No new Chrome launched.
+    if os.environ.get("JOBFORGE_DOCKER"):
+        options = Options()
+        options.debugger_address = "host.docker.internal:9222"
+        driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()),
+            options=options,
+        )
+        return driver, WebDriverWait(driver, 15)
+
     options = Options()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -135,11 +146,9 @@ def setup_driver(run_in_background: bool = False, profile_dir: str = None):
     )
     if profile_dir:
         options.add_argument(f"--user-data-dir={profile_dir}")
-    # Load UK Visa Sponsor extension if available
     ext_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extensions", "uk_visa_sponsor.crx")
     if os.path.exists(ext_path):
         options.add_extension(ext_path)
-    # Avoid headless — LinkedIn detects headless sessions far more aggressively
     if run_in_background:
         options.add_argument("--window-size=1920,1080")
 
@@ -150,8 +159,7 @@ def setup_driver(run_in_background: bool = False, profile_dir: str = None):
     driver.execute_script(
         "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
     )
-    wait = WebDriverWait(driver, 15)
-    return driver, wait
+    return driver, WebDriverWait(driver, 15)
 
 
 # ── LinkedIn login ────────────────────────────────────────────────────────────

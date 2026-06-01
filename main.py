@@ -3,6 +3,7 @@ JobForge — entry point.
 Starts Flask at localhost:7070 and opens the browser automatically.
 """
 
+import os
 import threading
 import webbrowser
 
@@ -36,11 +37,14 @@ if __name__ == "__main__":
     settings = config_manager.auto_detect_paths(settings)
     port = settings.get("app", {}).get("port", 7070)
     first_run = config_manager.is_first_run()
+    in_docker = bool(os.environ.get("JOBFORGE_DOCKER"))
 
-    auto_open = settings.get("app", {}).get("auto_open_browser", True)
-    if auto_open:
-        threading.Timer(1.2, _open_browser, args=[port, first_run]).start()
+    if not in_docker:
+        auto_open = settings.get("app", {}).get("auto_open_browser", True)
+        if auto_open:
+            threading.Timer(1.2, _open_browser, args=[port, first_run]).start()
 
+    host = "0.0.0.0" if in_docker else "127.0.0.1"
     print(f"\n  JobForge running at http://localhost:{port}")
     print(f"  Press Ctrl+C to stop\n")
-    app.run(host="127.0.0.1", port=port, debug=False)
+    app.run(host=host, port=port, debug=False)
