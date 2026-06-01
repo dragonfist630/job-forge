@@ -211,8 +211,6 @@ def save():
             "max_experience_gap": int(form.get("max_experience_gap", 2) or 2),
         },
         "paths": {
-            "career_ops": form.get("career_ops_path", ""),
-            "linkedin_applier": form.get("linkedin_applier_path", ""),
             "node_bin": form.get("node_bin_path", ""),
         },
         "app": {

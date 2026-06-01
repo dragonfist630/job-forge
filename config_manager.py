@@ -65,18 +65,8 @@ def validate_settings(data: dict) -> list[str]:
 
 
 def auto_detect_paths(settings: dict) -> dict:
-    """Detect linkedin-applier dir and node binary. career-ops is now internal."""
+    """Detect node binary. Scraping is fully self-contained via webdriver_manager."""
     paths = settings.get("paths", {})
-
-    if not paths.get("linkedin_applier"):
-        candidates = [
-            _ROOT.parent / "Auto_job_applier_linkedIn",
-            Path.home() / "Desktop" / "Auto_job_applier_linkedIn",
-        ]
-        for c in candidates:
-            if (c / "runAiBot.py").exists():
-                paths["linkedin_applier"] = str(c)
-                break
 
     if not paths.get("node_bin"):
         node = shutil.which("node")
@@ -90,11 +80,6 @@ def auto_detect_paths(settings: dict) -> dict:
 def get_career_ops_dir(settings: dict) -> Path:
     """Always returns the internal job-forge root (self-contained)."""
     return _ROOT
-
-
-def get_linkedin_applier_dir(settings: dict) -> Path:
-    p = settings.get("paths", {}).get("linkedin_applier", "")
-    return Path(p) if p else None
 
 
 def get_node_bin(settings: dict) -> str:
@@ -120,9 +105,6 @@ def check_health(settings: dict) -> dict:
     status["career_ops_found"] = INTERNAL_PDF_SCRIPT.exists()
     status["cv_md_found"] = INTERNAL_CV_PATH.exists()
     status["template_found"] = (INTERNAL_TEMPLATES_DIR / "cv-template.html").exists()
-
-    applier = get_linkedin_applier_dir(settings)
-    status["linkedin_applier_found"] = bool(applier and (applier / "runAiBot.py").exists())
 
     node = get_node_bin(settings)
     try:

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-scraper_worker.py -- subprocess script, run by scraper.py.
+scraper_worker.py -- standalone LinkedIn job scraper.
+No external project dependency. Uses Selenium + webdriver_manager directly.
 
 Receives job-forge settings as JSON via sys.argv[1].
-Patches LinkedIn applier config globals, runs scrape-only loop (no apply).
 Outputs JSON lines to stdout:
   {"type": "progress", "msg": "..."}
   {"type": "job",      "job_id": "...", "title": "...", ...}
@@ -15,104 +15,82 @@ import sys
 import os
 import csv
 import json
-import types
-import traceback
+import re
+import time
 import glob
+import traceback
 from urllib.parse import urlencode
 
 
+# ── Emit helpers ──────────────────────────────────────────────────────────────
 def emit(obj: dict):
     print(json.dumps(obj), flush=True)
 
-
 def emit_progress(msg: str):
     emit({"type": "progress", "msg": msg})
-
 
 def emit_error(msg: str):
     emit({"type": "error", "msg": msg})
 
 
-def load_visa_sponsors(linkedin_dir: str) -> set:
-    """
-    Load UK gov visa sponsor register from the linkedin applier directory.
-    Finds the most recent *Worker_and_Temporary_Worker*.csv file.
-    Returns a set of lowercased company names.
-    """
+# ── Visa sponsor CSV (optional) ───────────────────────────────────────────────
+def load_visa_sponsors() -> set:
     sponsors: set = set()
-    pattern = os.path.join(linkedin_dir, "*Worker_and_Temporary_Worker*.csv")
-    matches = sorted(glob.glob(pattern), reverse=True)  # most recent first
-    if not matches:
-        emit_progress("Visa sponsor CSV not found — skipping visa check")
-        return sponsors
-    csv_path = matches[0]
-    emit_progress(f"Loading visa sponsors from {os.path.basename(csv_path)}...")
-    try:
-        with open(csv_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                name = row.get("Organisation Name", "").strip().strip('"').lower()
-                if name:
-                    sponsors.add(name)
-        emit_progress(f"Loaded {len(sponsors)} visa-sponsoring companies")
-    except Exception as e:
-        emit_progress(f"Warning: could not load visa CSV: {e}")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    for base in [script_dir, os.path.join(script_dir, "data")]:
+        pattern = os.path.join(base, "*Worker_and_Temporary_Worker*.csv")
+        matches = sorted(glob.glob(pattern), reverse=True)
+        if matches:
+            try:
+                with open(matches[0], "r", encoding="utf-8") as f:
+                    for row in csv.DictReader(f):
+                        name = row.get("Organisation Name", "").strip().strip('"').lower()
+                        if name:
+                            sponsors.add(name)
+                emit_progress(f"Loaded {len(sponsors)} visa-sponsoring companies")
+                return sponsors
+            except Exception:
+                pass
+    emit_progress("Visa sponsor CSV not found — skipping visa check")
     return sponsors
 
 
+def is_visa_sponsor(company: str, sponsors: set) -> bool:
+    if not sponsors:
+        return False
+    c = company.strip().lower()
+    return c in sponsors or any(c in s or s in c for s in sponsors)
+
+
+# ── LinkedIn search URL builder ───────────────────────────────────────────────
 _DATE_POSTED = {
     "Past 24 hours": "r86400",
     "Past week":     "r604800",
     "Past month":    "r2592000",
     "Any time":      None,
 }
-_SORT_BY = {
-    "Most recent":   "DD",
-    "Most relevant": "R",
-}
-_JOB_TYPE = {
-    "Full-time":  "F",
-    "Part-time":  "P",
-    "Contract":   "C",
-    "Temporary":  "T",
-    "Volunteer":  "V",
-    "Internship": "I",
-    "Other":      "O",
-}
-_ON_SITE = {
-    "On-site": "1",
-    "Remote":  "2",
-    "Hybrid":  "3",
-}
-_EXP_LEVEL = {
-    "Internship":      "1",
-    "Entry level":     "2",
-    "Associate":       "3",
-    "Mid-Senior level":"4",
-    "Director":        "5",
-    "Executive":       "6",
-}
+_SORT_BY    = {"Most recent": "DD", "Most relevant": "R"}
+_JOB_TYPE   = {"Full-time": "F", "Part-time": "P", "Contract": "C",
+               "Temporary": "T", "Volunteer": "V", "Internship": "I", "Other": "O"}
+_ON_SITE    = {"On-site": "1", "Remote": "2", "Hybrid": "3"}
+_EXP_LEVEL  = {"Internship": "1", "Entry level": "2", "Associate": "3",
+               "Mid-Senior level": "4", "Director": "5", "Executive": "6"}
 
 
 def build_search_url(term: str, settings: dict) -> str:
-    """Build a LinkedIn job search URL with all filters encoded as URL params.
-    This is more reliable than clicking through the 'All filters' modal UI."""
     job_search = settings.get("job_search", {})
-    filters = job_search.get("filters", {})
-
-    params = {"keywords": term}
+    filters    = job_search.get("filters", {})
+    params     = {"keywords": term}
 
     location = job_search.get("search_location", "").strip()
     if location:
         params["location"] = location
 
-    date_posted = filters.get("date_posted") or "Past 24 hours"
-    tpr = _DATE_POSTED.get(date_posted)
+    tpr = _DATE_POSTED.get(filters.get("date_posted") or "Past 24 hours")
     if tpr:
         params["f_TPR"] = tpr
 
-    sort_by = filters.get("sort_by", "Most relevant")
-    params["sortBy"] = _SORT_BY.get(sort_by, "R")
+    params["sortBy"] = _SORT_BY.get(filters.get("sort_by", "Most relevant"), "R")
 
     job_types = [_JOB_TYPE[t] for t in filters.get("job_type", []) if t in _JOB_TYPE]
     if job_types:
@@ -132,169 +110,226 @@ def build_search_url(term: str, settings: dict) -> str:
     return "https://www.linkedin.com/jobs/search/?" + urlencode(params)
 
 
-def is_visa_sponsor(company: str, sponsors: set) -> bool:
-    """Fuzzy check — exact match or either name contains the other."""
-    if not sponsors:
-        return False
-    company_lower = company.strip().lower()
-    if company_lower in sponsors:
-        return True
-    for name in sponsors:
-        if company_lower in name or name in company_lower:
-            return True
-    return False
+# ── Browser setup ─────────────────────────────────────────────────────────────
+def setup_driver(run_in_background: bool = False, profile_dir: str = None):
+    from selenium import webdriver
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.support.ui import WebDriverWait
+    from webdriver_manager.chrome import ChromeDriverManager
+
+    options = Options()
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
+    options.add_experimental_option("prefs", {
+        "credentials_enable_service": False,
+        "profile.password_manager_enabled": False,
+    })
+    options.add_argument("--disable-notifications")
+    options.add_argument(
+        "user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+    )
+    if profile_dir:
+        options.add_argument(f"--user-data-dir={profile_dir}")
+    # Load UK Visa Sponsor extension if available
+    ext_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extensions", "uk_visa_sponsor.crx")
+    if os.path.exists(ext_path):
+        options.add_extension(ext_path)
+    # Avoid headless — LinkedIn detects headless sessions far more aggressively
+    if run_in_background:
+        options.add_argument("--window-size=1920,1080")
+
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()),
+        options=options,
+    )
+    driver.execute_script(
+        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    )
+    wait = WebDriverWait(driver, 15)
+    return driver, wait
 
 
-def build_mock_modules(settings: dict):
-    """Inject fake config modules into sys.modules before any applier import."""
-
-    li = settings.get("linkedin", {})
-    identity = settings.get("identity", {})
-    loc = settings.get("location", {})
-    eqo = settings.get("equal_opportunity", {})
-    exp = settings.get("experience", {})
-    comp = settings.get("compensation", {})
-    np_days = settings.get("notice_period", {}).get("days", 30)
-    online = settings.get("online_presence", {})
-    work_auth = settings.get("work_authorization", {})
-    job_search = settings.get("job_search", {})
-    filters = job_search.get("filters", {})
-    screening = settings.get("screening", {})
-    app_cfg = settings.get("app", {})
-
-    desired_salary = comp.get("desired_salary", 80000)
-    current_ctc_val = comp.get("current_ctc", 0)
-    current_experience = exp.get("current_experience", 5)
-    did_masters = exp.get("did_masters", False)
-
-    # --- config package stub ---
-    config_pkg = types.ModuleType("config")
-    sys.modules["config"] = config_pkg
-
-    # --- config.personals ---
-    p = types.ModuleType("config.personals")
-    p.first_name = identity.get("first_name", "")
-    p.middle_name = identity.get("middle_name", "")
-    p.last_name = identity.get("last_name", "")
-    p.phone_number = str(identity.get("phone_number", ""))
-    p.current_city = loc.get("city", "")
-    p.street = loc.get("street", "")
-    p.state = loc.get("state", "")
-    p.zipcode = str(loc.get("zipcode", ""))
-    p.country = loc.get("country", "United States")
-    p.ethnicity = eqo.get("ethnicity", "Decline")
-    p.gender = eqo.get("gender", "Decline")
-    p.disability_status = eqo.get("disability_status", "Decline")
-    p.veteran_status = eqo.get("veteran_status", "Decline")
-    sys.modules["config.personals"] = p
-    config_pkg.personals = p
-
-    # --- config.questions ---
-    q = types.ModuleType("config.questions")
-    q.default_resume_path = "all resumes/resume.pdf"
-    q.years_of_experience = str(exp.get("years_of_experience", "3"))
-    q.require_visa = "Yes" if work_auth.get("require_visa_sponsorship") else "No"
-    q.website = online.get("portfolio", "")
-    q.linkedIn = online.get("linkedin", "")
-    q.us_citizenship = work_auth.get("us_citizenship", "")
-    q.desired_salary = desired_salary
-    q.current_ctc = current_ctc_val
-    q.notice_period = np_days
-    q.current_experience = current_experience
-    q.did_masters = did_masters
-    q.confidence_level = str(exp.get("confidence_level", "8"))
-    q.recent_employer = exp.get("recent_employer", "")
-    q.linkedin_headline = settings.get("professional_summary", {}).get("headline", "")
-    q.linkedin_summary = settings.get("professional_summary", {}).get("summary", "")
-    q.cover_letter = ""
-    q.pause_before_submit = False
-    q.pause_at_failed_question = False
-    q.overwrite_previous_answers = False
-    sys.modules["config.questions"] = q
-    config_pkg.questions = q
-
-    # --- config.search ---
-    s = types.ModuleType("config.search")
-    s.search_terms = job_search.get("search_terms", [])
-    s.search_location = job_search.get("search_location", "")
-    s.switch_number = job_search.get("switch_number", 30)
-    s.randomize_search_order = False
-    s.sort_by = filters.get("sort_by", "Most recent")
-    s.date_posted = filters.get("date_posted") or "Past 24 hours"
-    s.salary = filters.get("salary", "")
-    s.easy_apply_only = filters.get("easy_apply_only", True)
-    s.experience_level = filters.get("experience_level", [])
-    s.job_type = filters.get("job_type", [])
-    s.on_site = filters.get("on_site", [])
-    s.companies = []
-    s.location = []
-    s.industry = []
-    s.job_function = []
-    s.job_titles = []
-    s.benefits = []
-    s.commitments = []
-    s.under_10_applicants = False
-    s.in_your_network = False
-    s.fair_chance_employer = False
-    s.pause_after_filters = False
-    s.about_company_bad_words = []
-    s.about_company_good_words = []
-    s.bad_words = screening.get("bad_words", [])
-    s.security_clearance = screening.get("security_clearance", False)
-    s.did_masters = did_masters
-    s.current_experience = current_experience
-    sys.modules["config.search"] = s
-    config_pkg.search = s
-
-    # --- config.secrets ---
-    sec = types.ModuleType("config.secrets")
-    sec.username = li.get("email", "")
-    sec.password = li.get("password", "")
-    sec.use_AI = False
-    sec.ai_provider = "openai"
-    sys.modules["config.secrets"] = sec
-    config_pkg.secrets = sec
-
-    # --- config.settings ---
-    cs = types.ModuleType("config.settings")
-    cs.close_tabs = False
-    cs.follow_companies = False
-    cs.run_non_stop = False
-    cs.alternate_sortby = False
-    cs.cycle_date_posted = False
-    cs.stop_date_cycle_at_24hr = False
-    cs.generated_resume_path = "all resumes"
-    cs.file_name = "all excels/all_applied_applications_history.csv"
-    cs.failed_file_name = "all excels/all_failed_applications_history.csv"
-    cs.logs_folder_path = "logs/"
-    cs.click_gap = app_cfg.get("click_gap", 1)
-    cs.run_in_background = app_cfg.get("run_in_background", False)
-    cs.disable_extensions = False
-    cs.safe_mode = True
-    cs.smooth_scroll = False
-    cs.keep_screen_awake = False
-    cs.stealth_mode = False
-    cs.showAiErrorAlerts = False
-    cs.pause_before_submit = False
-    cs.pause_at_failed_question = False
-    sys.modules["config.settings"] = cs
-    config_pkg.settings = cs
+# ── LinkedIn login ────────────────────────────────────────────────────────────
+def _is_logged_in(driver) -> bool:
+    url = driver.current_url
+    return "linkedin.com/feed" in url or "linkedin.com/jobs" in url or "linkedin.com/in/" in url
 
 
-def suppress_pyautogui():
-    """Mock pyautogui so no GUI dialogs block the headless worker."""
+def login_linkedin(driver, wait, email: str, password: str):
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+
+    # Check if already logged in via saved profile
+    driver.get("https://www.linkedin.com/feed/")
+    time.sleep(3)
+    if _is_logged_in(driver):
+        return
+
+    driver.get("https://www.linkedin.com/login")
+    wait.until(EC.presence_of_element_located((By.ID, "username")))
+
+    # Dismiss cookie/GDPR banner if present
     try:
-        import pyautogui
-        pyautogui.alert = lambda *a, **kw: None
-        pyautogui.confirm = lambda *a, **kw: "Look's good, Continue"
-        pyautogui.press = lambda *a, **kw: None
+        consent_btn = driver.find_element(
+            By.XPATH, "//button[@action-type='DENY' or @action-type='ACCEPT']"
+        )
+        consent_btn.click()
+        time.sleep(1)
     except Exception:
         pass
 
+    driver.find_element(By.ID, "username").clear()
+    driver.find_element(By.ID, "username").send_keys(email)
+    driver.find_element(By.ID, "password").clear()
+    driver.find_element(By.ID, "password").send_keys(password)
+    driver.find_element(By.XPATH, "//button[@type='submit']").click()
+    time.sleep(5)
 
+    url = driver.current_url
+    if "/login" in url or "/checkpoint" in url or "/authwall" in url or "/uas/" in url:
+        raise RuntimeError(
+            "LinkedIn login failed. Check your email/password in Settings, "
+            "or complete the security challenge in the browser window first."
+        )
+
+
+# ── Job card parsing ──────────────────────────────────────────────────────────
+def _text(el, css):
+    try:
+        return el.find_element("css selector", css).text.strip()
+    except Exception:
+        return ""
+
+
+def parse_job_card(job_el) -> dict:
+    """Extract metadata visible on the job card without clicking."""
+    job_id = job_el.get_attribute("data-occludable-job-id") or ""
+
+    title = ""
+    for sel in [
+        ".job-card-list__title--link",
+        ".job-card-container__link",
+        ".job-card-list__title",
+    ]:
+        title = _text(job_el, sel)
+        if title:
+            break
+
+    company = _text(job_el, ".job-card-container__primary-description")
+    if not company:
+        company = _text(job_el, ".artdeco-entity-lockup__subtitle")
+
+    work_location = ""
+    work_style    = ""
+    try:
+        for item in job_el.find_elements("css selector", ".job-card-container__metadata-item"):
+            txt = item.text.strip()
+            if not txt:
+                continue
+            lower = txt.lower()
+            if any(s in lower for s in ("remote", "hybrid", "on-site", "onsite")):
+                work_style = txt
+            elif not work_location:
+                work_location = txt
+    except Exception:
+        pass
+
+    return {"job_id": job_id, "title": title, "company": company,
+            "work_location": work_location, "work_style": work_style}
+
+
+# ── Job description ───────────────────────────────────────────────────────────
+def fetch_description(driver, wait, job_id: str) -> tuple:
+    """Click the job card to load description panel. Returns (text, exp_years)."""
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+
+    description = ""
+    experience  = "Unknown"
+
+    try:
+        job_el = driver.find_element(
+            By.XPATH, f"//li[@data-occludable-job-id='{job_id}']"
+        )
+        driver.execute_script("arguments[0].click();", job_el)
+        time.sleep(2)
+
+        for sel in [
+            ".jobs-description-content__text",
+            ".jobs-description__content",
+            ".jobs-box__html-content",
+        ]:
+            try:
+                el = driver.find_element(By.CSS_SELECTOR, sel)
+                txt = el.text.strip()
+                if len(txt) > 80:
+                    description = txt
+                    break
+            except Exception:
+                continue
+
+        if description:
+            m = re.search(
+                r"(\d+)\+?\s*(?:to\s*\d+\s*)?years?\s*(?:of\s*)?(?:experience|exp)",
+                description, re.IGNORECASE
+            )
+            if m:
+                experience = m.group(1)
+
+    except Exception:
+        pass
+
+    return description, experience
+
+
+# ── Bad-word filter ───────────────────────────────────────────────────────────
+def has_bad_word(text: str, bad_words: list) -> bool:
+    low = text.lower()
+    return any(w.strip().lower() in low for w in bad_words if w.strip())
+
+
+# ── Chrome profile selection ──────────────────────────────────────────────────
+def _pick_profile_dir() -> str:
+    """
+    Prefer the auto_job_applier profile if it exists — it already has a LinkedIn
+    session. Fall back to job-forge's own chrome-profile (empty on first run).
+    """
+    import pathlib
+    home = pathlib.Path.home()
+
+    candidates = []
+    if sys.platform == "darwin":
+        candidates = [
+            home / "Library" / "Application Support" / "Google" / "Chrome" / "auto-job-apply-profile",
+        ]
+    elif sys.platform.startswith("win"):
+        import os as _os
+        local = _os.environ.get("LOCALAPPDATA", "")
+        if local:
+            candidates = [
+                pathlib.Path(local) / "Google" / "Chrome" / "User Data" / "auto-job-apply-profile",
+            ]
+
+    for c in candidates:
+        if c.exists():
+            return str(c)
+
+    # Fall back to our own profile dir (user must log in once manually)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    profile_dir = os.path.join(script_dir, "chrome-profile")
+    os.makedirs(profile_dir, exist_ok=True)
+    return profile_dir
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     if len(sys.argv) < 2:
-        emit_error("No settings JSON provided as argv[1]")
+        emit_error("No settings JSON provided")
         sys.exit(1)
 
     try:
@@ -303,140 +338,132 @@ def main():
         emit_error(f"Invalid settings JSON: {e}")
         sys.exit(1)
 
-    linkedin_dir = settings.get("paths", {}).get("linkedin_applier", "")
-    if not linkedin_dir or not os.path.isdir(linkedin_dir):
-        emit_error(f"LinkedIn applier directory not found: {linkedin_dir}")
+    linkedin       = settings.get("linkedin", {})
+    email          = linkedin.get("email", "")
+    password       = linkedin.get("password", "")
+    job_search     = settings.get("job_search", {})
+    search_terms   = job_search.get("search_terms", [])
+    switch_number  = job_search.get("switch_number", 30)
+    bad_words      = settings.get("screening", {}).get("bad_words", [])
+    run_bg         = settings.get("app", {}).get("run_in_background", False)
+
+    if not email or not password:
+        emit_error(
+            "LinkedIn email/password not set. "
+            "Go to Settings → LinkedIn Credentials and fill them in."
+        )
         sys.exit(1)
 
-    # Change to linkedin dir — all relative file paths inside it depend on this
-    os.chdir(linkedin_dir)
-    sys.path.insert(0, linkedin_dir)
-
-    # Inject mock config modules before any applier import
-    build_mock_modules(settings)
-    suppress_pyautogui()
-
-    emit_progress("Launching browser...")
-
-    try:
-        import modules.open_chrome as oc
-        driver = oc.driver
-        wait = oc.wait
-        actions = oc.actions
-    except Exception as e:
-        emit_error(f"Browser launch failed: {e}\n{traceback.format_exc()}")
+    if not search_terms:
+        emit_error(
+            "No search terms configured. "
+            "Go to Settings → Job Search and add job titles to search."
+        )
         sys.exit(1)
 
+    visa_sponsors = load_visa_sponsors()
+
+    profile_dir = _pick_profile_dir()
+    emit_progress(f"Using Chrome profile: {profile_dir}")
+
+    emit_progress("Launching browser (downloading ChromeDriver if needed)...")
     try:
-        import runAiBot as bot
+        driver, wait = setup_driver(run_bg, profile_dir)
     except Exception as e:
-        emit_error(f"Failed to load LinkedIn applier: {e}\n{traceback.format_exc()}")
-        try:
-            driver.quit()
-        except Exception:
-            pass
+        emit_error(
+            f"Browser launch failed: {e}\n"
+            "Make sure Google Chrome is installed on this machine."
+        )
         sys.exit(1)
 
     from selenium.webdriver.common.by import By
-    from selenium.webdriver.support import expected_conditions as EC
-    import time
 
-    job_search = settings.get("job_search", {})
-    search_terms = job_search.get("search_terms", [])
-    switch_number = job_search.get("switch_number", 30)
-
-    # Load visa sponsor register
-    visa_sponsors = load_visa_sponsors(linkedin_dir)
+    jobs_collected: list = []
+    seen_ids: set = set()
 
     try:
         emit_progress("Logging into LinkedIn...")
-        bot.login_LN()
-
-        jobs_collected = []
-        rejected_jobs: set = set()
-        blacklisted_companies: set = set()
+        try:
+            login_linkedin(driver, wait, email, password)
+            emit_progress("Login successful")
+        except RuntimeError as e:
+            emit_error(str(e))
+            driver.quit()
+            sys.exit(1)
 
         for term in search_terms:
             url = build_search_url(term, settings)
-            emit_progress(f'Searching: "{term}" (filters encoded in URL)')
+            emit_progress(f'Searching: "{term}"')
             driver.get(url)
-            time.sleep(3)  # let filtered results load
+            time.sleep(3)
+
+            # Detect session expiry / bot wall redirect
+            cur = driver.current_url
+            if "/login" in cur or "/authwall" in cur or "/checkpoint" in cur:
+                emit_error(
+                    "LinkedIn redirected to login during scraping. "
+                    "Your session may have expired. Try: (1) run with Chrome visible "
+                    "(disable 'Run in background'), (2) restart the scan to log in again."
+                )
+                break
 
             current_count = 0
 
             while current_count < switch_number:
                 try:
-                    wait.until(
-                        EC.presence_of_all_elements_located(
-                            (By.XPATH, "//li[@data-occludable-job-id]")
-                        )
+                    job_els = driver.find_elements(
+                        By.XPATH, "//li[@data-occludable-job-id]"
                     )
                 except Exception:
                     break
 
-                pagination_element, current_page = bot.get_page_info()
-                time.sleep(2)
+                if not job_els:
+                    emit_progress(f'No job listings found for "{term}" — LinkedIn may have changed its layout or session expired')
+                    break
 
-                job_listings = driver.find_elements(
-                    By.XPATH, "//li[@data-occludable-job-id]"
-                )
-                emit_progress(
-                    f'Page {current_page} — found {len(job_listings)} listings'
-                )
+                emit_progress(f'Page — {len(job_els)} listings visible')
 
-                for job in job_listings:
+                for job_el in job_els:
                     if current_count >= switch_number:
                         break
 
-                    job_id, title, company, work_location, work_style, skip = (
-                        bot.get_job_main_details(job, blacklisted_companies, rejected_jobs)
-                    )
+                    card = parse_job_card(job_el)
+                    job_id  = card["job_id"]
+                    title   = card["title"]
+                    company = card["company"]
 
-                    if skip:
+                    if not job_id or job_id in seen_ids or not title:
                         continue
 
-                    # Skip if already collected this job_id
-                    if any(j["job_id"] == job_id for j in jobs_collected):
+                    if has_bad_word(title + " " + company, bad_words):
+                        emit_progress(f'Skipped "{title}" (bad word in title/company)')
                         continue
 
-                    job_link = f"https://www.linkedin.com/jobs/view/{job_id}"
+                    description, experience = fetch_description(driver, wait, job_id)
 
-                    try:
-                        rejected_jobs, blacklisted_companies, _ = bot.check_blacklist(
-                            rejected_jobs, job_id, company, blacklisted_companies
-                        )
-                    except ValueError as e:
-                        emit_progress(f"Skipped {company} (blacklisted): {e}")
-                        continue
-                    except Exception:
-                        pass
-
-                    description, experience_required, skip, reason, _ = (
-                        bot.get_job_description()
-                    )
-
-                    if skip:
-                        emit_progress(f'Skipped "{title}" at {company}: {reason}')
+                    if has_bad_word(description, bad_words):
+                        emit_progress(f'Skipped "{title}" (bad word in description)')
                         continue
 
+                    seen_ids.add(job_id)
                     record = {
-                        "type": "job",
-                        "job_id": job_id,
-                        "title": title,
-                        "company": company,
-                        "work_location": work_location,
-                        "work_style": work_style,
-                        "job_link": job_link,
-                        "job_description": description,
-                        "experience_required": str(experience_required),
-                        "search_term": term,
-                        "visa_sponsored": is_visa_sponsor(company, visa_sponsors),
+                        "type":                "job",
+                        "job_id":              job_id,
+                        "title":               title,
+                        "company":             company,
+                        "work_location":       card["work_location"],
+                        "work_style":          card["work_style"],
+                        "job_link":            f"https://www.linkedin.com/jobs/view/{job_id}",
+                        "job_description":     description,
+                        "experience_required": experience,
+                        "search_term":         term,
+                        "visa_sponsored":      is_visa_sponsor(company, visa_sponsors),
                     }
                     emit(record)
                     jobs_collected.append(record)
                     current_count += 1
 
-                # Try next page
+                # Next page
                 try:
                     next_btn = driver.find_element(
                         By.XPATH, "//button[@aria-label='View next page']"

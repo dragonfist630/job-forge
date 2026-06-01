@@ -432,10 +432,6 @@ Python, Go, TypeScript, React, AWS, Docker, Kubernetes">{{ cv_text or '' }}</tex
       </div>
 
       <div class="form-group">
-        <label>Auto_job_applier_linkedIn folder</label>
-        <input type="text" name="linkedin_applier_path" value="{{ settings.paths.linkedin_applier or '' }}" placeholder="/Users/you/Desktop/Auto_job_applier_linkedIn">
-      </div>
-      <div class="form-group">
         <label>Node.js binary path</label>
         <input type="text" name="node_bin_path" value="{{ settings.paths.node_bin or '' }}" placeholder="/usr/local/bin/node">
       </div>
@@ -446,7 +442,6 @@ Python, Go, TypeScript, React, AWS, Docker, Kubernetes">{{ cv_text or '' }}</tex
         <div class="health-item" id="h-cv">⏳ cv.md</div>
         <div class="health-item" id="h-template">⏳ CV template</div>
         <div class="health-item" id="h-claude-cli">⏳ Claude CLI</div>
-        <div class="health-item" id="h-linkedin">⏳ LinkedIn applier</div>
         <div class="health-item" id="h-node">⏳ Node.js</div>
         <div class="health-item" id="h-selenium">⏳ selenium</div>
       </div>
@@ -519,7 +514,6 @@ function runHealthCheck() {
     'h-cv':          'cv_md_found',
     'h-template':    'template_found',
     'h-claude-cli':  'claude_cli',
-    'h-linkedin':    'linkedin_applier_found',
     'h-node':        'node_found',
     'h-selenium':    'selenium',
   };
@@ -528,7 +522,6 @@ function runHealthCheck() {
     'h-cv':          'cv.md',
     'h-template':    'CV template',
     'h-claude-cli':  'Claude CLI',
-    'h-linkedin':    'LinkedIn applier',
     'h-node':        'Node.js',
     'h-selenium':    'selenium',
   };
