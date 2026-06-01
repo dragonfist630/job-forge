@@ -45,6 +45,7 @@ ok "Chrome"
 info "Starting Chrome (remote debugging mode)..."
 "$CHROME" \
     --remote-debugging-port=9222 \
+    --remote-debugging-address=0.0.0.0 \
     --user-data-dir="$(pwd)/chrome-profile" \
     --no-first-run \
     --no-default-browser-check \

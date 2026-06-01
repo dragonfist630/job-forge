@@ -50,7 +50,7 @@ echo   [OK] Chrome
 
 REM ── Launch Chrome with remote debugging ────────────────────
 echo   [->] Starting Chrome...
-start "" "!CHROME_EXE!" --remote-debugging-port=9222 --user-data-dir="%~dp0chrome-profile" --no-first-run --no-default-browser-check
+start "" "!CHROME_EXE!" --remote-debugging-port=9222 --remote-debugging-address=0.0.0.0 --user-data-dir="%~dp0chrome-profile" --no-first-run --no-default-browser-check
 timeout /t 3 /nobreak >nul
 
 REM ── Build + start Docker container ─────────────────────────
