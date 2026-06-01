@@ -224,9 +224,11 @@ def setup_driver(run_in_background: bool = False, profile_dir: str = None):
 
 
 # ── LinkedIn login ────────────────────────────────────────────────────────────
+_LOGGED_IN_PATHS = ("/feed", "/jobs", "/mynetwork", "/messaging", "/notifications", "/home", "/in/")
+
 def _is_logged_in(driver) -> bool:
     url = driver.current_url
-    return "linkedin.com/feed" in url or "linkedin.com/jobs" in url or "linkedin.com/in/" in url
+    return any(p in url for p in _LOGGED_IN_PATHS) and "linkedin.com" in url
 
 
 def login_linkedin(driver, wait, email: str, password: str):
@@ -236,11 +238,29 @@ def login_linkedin(driver, wait, email: str, password: str):
     # Check if already logged in via saved profile
     driver.get("https://www.linkedin.com/feed/")
     time.sleep(3)
+    emit_progress(f"[debug] after feed nav — url={driver.current_url!r} title={driver.title!r}")
     if _is_logged_in(driver):
         return
 
     driver.get("https://www.linkedin.com/login")
-    wait.until(EC.presence_of_element_located((By.ID, "username")))
+    time.sleep(2)
+    emit_progress(f"[debug] after login nav — url={driver.current_url!r} title={driver.title!r}")
+
+    # LinkedIn sometimes shows a CAPTCHA/challenge or "Continue as [name]" page
+    # instead of the plain username/password form. Try to wait, then explain clearly.
+    try:
+        wait.until(EC.presence_of_element_located((By.ID, "username")))
+    except Exception:
+        cur = driver.current_url
+        title = driver.title
+        raise RuntimeError(
+            f"LinkedIn login page did not show the username form. "
+            f"URL={cur!r} title={title!r}. "
+            "Possible causes: (1) session expired — open Chrome, go to linkedin.com and log in manually, "
+            "then restart JobForge.command; (2) LinkedIn is showing a CAPTCHA — "
+            "complete it in the Chrome window that opened; "
+            "(3) LinkedIn shows 'Continue as [name]' — click it in Chrome to proceed."
+        )
 
     # Dismiss cookie/GDPR banner if present
     try:
