@@ -800,7 +800,7 @@ def generate_resume(job: dict, settings: dict, proc_callback=None) -> dict:
 
 # ── SSE stream ────────────────────────────────────────────────────────────────
 
-def stream_generate(settings: dict, job_ids: list[str] | None = None):
+def stream_generate(settings: dict, job_ids=None):
     """
     Generator — yields SSE strings.
     job_ids=None  → all approved jobs not yet in resumes index (Generate All)

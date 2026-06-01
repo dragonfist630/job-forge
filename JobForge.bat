@@ -20,7 +20,6 @@ if errorlevel 1 (
         echo       Please download from https://www.python.org/downloads/
         pause & exit /b 1
     )
-    REM Refresh PATH
     call refreshenv 2>nul
     where python >nul 2>&1
     if errorlevel 1 (
@@ -28,7 +27,24 @@ if errorlevel 1 (
         pause & exit /b 1
     )
 )
-for /f "tokens=*" %%v in ('python --version 2^>^&1') do echo   [OK] %%v
+for /f "tokens=*" %%v in ('python --version 2^>^&1') do set PYVER=%%v
+echo   [OK] %PYVER%
+
+REM ── Require Python 3.10+ ──────────────────────────────────
+python -c "import sys; exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo   [X] JobForge needs Python 3.10 or newer.
+    echo       You have: %PYVER%
+    echo.
+    echo       Download Python 3.11 from:
+    echo       https://www.python.org/downloads/
+    echo.
+    echo       When installing, tick "Add Python to PATH".
+    echo       Then close and re-open this file.
+    echo.
+    pause & exit /b 1
+)
 
 REM ── Check Node.js ─────────────────────────────────────────
 where node >nul 2>&1
@@ -45,10 +61,10 @@ if errorlevel 1 (
 for /f "tokens=*" %%v in ('node --version 2^>^&1') do echo   [OK] Node.js %%v
 
 REM ── Install Python packages if needed ─────────────────────
-python -c "import flask, yaml, anthropic, selenium, webdriver_manager" >nul 2>&1
+python -c "import flask, yaml, selenium, webdriver_manager" >nul 2>&1
 if errorlevel 1 (
     echo   [->] Installing Python packages (one-time setup)...
-    pip install -r requirements.txt -q
+    pip install -r requirements.txt
     if errorlevel 1 (
         echo   [X] Failed to install packages. Check your internet connection.
         pause & exit /b 1
@@ -79,7 +95,12 @@ echo  ==========================================
 echo.
 
 python main.py
+if errorlevel 1 (
+    echo.
+    echo   [X] JobForge crashed. Error shown above.
+    echo       Screenshot this window and share with support.
+)
 
 echo.
-echo   [!] JobForge stopped.
+echo   JobForge stopped.
 pause
