@@ -42,14 +42,25 @@ fi
 ok "Chrome"
 
 # ── Launch Chrome with remote debugging ─────────────────────
-# Kill any prior debug-port Chrome so new flags (--remote-debugging-address) take effect
+# Kill any prior debug-port Chrome so new flags take effect
 lsof -ti tcp:9222 | xargs kill -9 2>/dev/null || true
 sleep 1
+
+# Prefer auto-job-applier profile (already logged into LinkedIn)
+AUTO_PROFILE="$HOME/Library/Application Support/Google/Chrome/auto-job-apply-profile"
+if [ -d "$AUTO_PROFILE" ]; then
+    CHROME_PROFILE="$AUTO_PROFILE"
+    info "Using existing LinkedIn session (auto-job-applier profile)"
+else
+    CHROME_PROFILE="$(pwd)/chrome-profile"
+    info "Using fresh Chrome profile (log into LinkedIn when Chrome opens)"
+fi
+
 info "Starting Chrome (remote debugging mode)..."
 "$CHROME" \
     --remote-debugging-port=9222 \
     --remote-debugging-address=0.0.0.0 \
-    --user-data-dir="$(pwd)/chrome-profile" \
+    --user-data-dir="$CHROME_PROFILE" \
     --no-first-run \
     --no-default-browser-check \
     &>/dev/null &
