@@ -103,6 +103,10 @@ def save():
     cv_text = form.get("cv_text", "").strip()
     if cv_text:
         config_manager.INTERNAL_CV_PATH.write_text(cv_text, encoding="utf-8")
+        # Trigger async CV structuring (Plan 3) — non-blocking
+        import threading
+        import cv_extractor
+        threading.Thread(target=cv_extractor.extract, kwargs={"force": True}, daemon=True).start()
 
     # Generate and write _profile.md
     target_roles = form.get("target_roles", "")

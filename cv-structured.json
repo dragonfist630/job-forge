@@ -1,0 +1,216 @@
+{
+  "roles": [
+    {
+      "company": "Meta (via Qualitest)",
+      "title": "Software Development Engineer in Test",
+      "dates": "Jul 2025 – Present",
+      "location": "",
+      "bullets": [
+        "Engineered a custom event delegation system in JavaScript that improved UI interaction response time by 65ms on average",
+        "Cut manual regression testing by 60% with reusable plans and high-impact scenarios for faster, focused releases",
+        "Raised test coverage from 65% to 92% and cut flakiness by 70% by modularizing utilities, mocking async flows with Jest fakeTimers/spyOn"
+      ],
+      "technologies": [
+        "JavaScript",
+        "Jest"
+      ],
+      "metrics": [
+        "65ms",
+        "60%",
+        "65%",
+        "92%",
+        "70%"
+      ]
+    },
+    {
+      "company": "Freelancing",
+      "title": "Software Engineer",
+      "dates": "Oct 2023 – Jun 2024",
+      "location": "",
+      "bullets": [
+        "Enhanced perceived performance on low-end devices by reducing interaction latency by 65 ms through a lightweight custom event layer in large, data-heavy React views",
+        "Improved SQL data traceability by 60% by writing optimized SQL queries and stored procedures to track anomalies in customer data pipelines, integrating these into admin dashboards to empower support teams to self-serve, which reduced QA bottlenecks by 4 hours per sprint",
+        "Reduced JSON payload sizes of REST API by up to 200KB on average and improved web application speed by integrating gzip compression in express middleware - Node",
+        "Boosted accessibility compliance by 95% by auditing 30+ React components with axe-core and refactoring HTML with ARIA roles, semantic tags, and keyboard support per WCAG 2.1 AA - UX"
+      ],
+      "technologies": [
+        "React",
+        "SQL",
+        "Node",
+        "Express",
+        "axe-core"
+      ],
+      "metrics": [
+        "65 ms",
+        "60%",
+        "4 hours",
+        "200KB",
+        "95%",
+        "30+"
+      ]
+    },
+    {
+      "company": "University of Bradford",
+      "title": "Research Intern",
+      "dates": "May 2023 – Aug 2023",
+      "location": "",
+      "bullets": [
+        "We developed a web platform for mapping and tracking researchers, reducing overlapping research funding requests",
+        "Designed systematic stakeholder feedback integration communication that reduced feature development cycles by eight weeks in agile methodology, leading to 66.66% faster time-to-market",
+        "Achieved zero failed deployments across 20+ releases by implementing Git Flow branching strategy and automated PR reviews, streamlining our team's development workflow",
+        "Improved rendering efficiency by 20% and reduced memory usage by 15% by leveraging React Query's structural sharing to maintain referential identity during background refetches, minimizing unnecessary re-renders"
+      ],
+      "technologies": [
+        "React Query",
+        "Git Flow"
+      ],
+      "metrics": [
+        "eight weeks",
+        "66.66%",
+        "zero failed deployments",
+        "20+",
+        "20%",
+        "15%"
+      ]
+    },
+    {
+      "company": "Torry Harris Business Solutions",
+      "title": "Associate Software Engineer",
+      "dates": "Sep 2021 – Aug 2022",
+      "location": "",
+      "bullets": [
+        "Optimised the re-rendering time by restructuring dependencies reducing average render times from 900 ms to 630 ms - MIUI",
+        "Deployed indexes on frequently queried columns enhancing application responsiveness for 1M+ records",
+        "Created a modular react architecture with ES6+ features that reduced bundle size by 22% through code splitting and dynamic imports"
+      ],
+      "technologies": [
+        "React",
+        "ES6+",
+        "MIUI"
+      ],
+      "metrics": [
+        "900 ms",
+        "630 ms",
+        "1M+",
+        "22%"
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Web Security Solution with ML Powered Face Recognition",
+      "description": "Engineered and fine-tuned a breakthrough browser authentication system using WebGL and YOLOv11 for object detection to stop spoofing, reducing infrastructure costs by 90% by running Machine Learning models inside the browser, enabling secure and scalable access control for resource-constrained organizations",
+      "technologies": [
+        "React",
+        "Tensorflow.js",
+        "Firebase",
+        "WebGL",
+        "YOLOv11"
+      ],
+      "metrics": [
+        "90%"
+      ],
+      "url": ""
+    },
+    {
+      "name": "AI Powered Finance Platform",
+      "description": "A scalable finance management platform with 8+ integrated features, including multi-bank account tracking, receipt scanning, and automated monthly financial reports",
+      "technologies": [
+        "React.js",
+        "Gemini API",
+        "Prisma",
+        "SQL"
+      ],
+      "metrics": [
+        "8+"
+      ],
+      "url": ""
+    }
+  ],
+  "education": [
+    {
+      "degree": "MSc in Software Engineering",
+      "institution": "City University London",
+      "dates": "Sept 2022 – Oct 2024",
+      "description": "Grade: Merit (2:1)"
+    }
+  ],
+  "certifications": [],
+  "skills": [
+    "CI/CD",
+    "TDD",
+    "REST API",
+    "accessibility compliance",
+    "WCAG 2.1 AA",
+    "test coverage",
+    "microservices architecture",
+    "agile methodology",
+    "code splitting",
+    "blue-green deployment",
+    "event delegation",
+    "SQL optimization",
+    "gzip compression",
+    "bundle size optimization",
+    "structured logging",
+    "observability",
+    "Git Flow branching strategy",
+    "automated PR reviews",
+    "zero-copy data structures",
+    "lock-free data paths",
+    "lazy-loaded modules",
+    "structured concurrency",
+    "async I/O",
+    "infrastructure provisioning",
+    "authentication workflows"
+  ],
+  "technologies": [
+    "JavaScript",
+    "React",
+    "React.js",
+    "Node",
+    "Express",
+    "Jest",
+    "SQL",
+    "MongoDB",
+    "MySQL",
+    "React Query",
+    "TanStack Query",
+    "Git",
+    "Git Flow",
+    "ESLint",
+    "Tensorflow.js",
+    "Firebase",
+    "WebGL",
+    "YOLOv11",
+    "Python",
+    "Flask",
+    "FastAPI",
+    "Rust",
+    "Tokio",
+    "Arc",
+    "RwLock",
+    "Protobuf",
+    "bincode",
+    "OpenTelemetry",
+    "tracing",
+    "Kubernetes",
+    "Docker",
+    "docker-compose",
+    "Terraform",
+    "AWS",
+    "Fargate",
+    "AWS Cognito",
+    "IAM",
+    "Prisma",
+    "Gemini API",
+    "axe-core",
+    "ES6+",
+    "MIUI",
+    "ARIA"
+  ],
+  "soft_skills": [
+    "cross-functional collaboration",
+    "stakeholder feedback integration",
+    "agile methodology"
+  ]
+}

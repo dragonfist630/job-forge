@@ -16,7 +16,8 @@ CONFIG_PATH = Path(__file__).resolve().parent / "config" / "settings.yaml"
 
 # Internal paths — everything lives inside job-forge
 _ROOT = Path(__file__).resolve().parent
-INTERNAL_CV_PATH      = _ROOT / "cv.md"
+INTERNAL_CV_PATH              = _ROOT / "cv.md"
+INTERNAL_CV_STRUCTURED_PATH  = _ROOT / "cv-structured.json"
 INTERNAL_MODES_DIR    = _ROOT / "modes"
 INTERNAL_TEMPLATES_DIR = _ROOT / "templates"
 INTERNAL_PDF_SCRIPT   = _ROOT / "generate-pdf.mjs"

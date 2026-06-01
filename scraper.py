@@ -18,6 +18,8 @@ from pathlib import Path
 from threading import Thread
 from queue import Queue, Empty
 
+import scorer
+
 DATA_DIR = Path(__file__).parent / "data"
 JOBS_FILE = DATA_DIR / "jobs.json"
 APPROVALS_FILE = DATA_DIR / "approved_jobs.json"
@@ -131,6 +133,7 @@ def stream_scan(settings: dict):
                 job_id = obj.get("job_id")
                 if job_id and job_id not in existing_ids:
                     obj["scan_session"] = scan_session
+                    obj["score"] = scorer.score_job(obj, settings)
                     all_jobs.append(obj)
                     save_jobs(all_jobs)
                     existing_ids.add(job_id)

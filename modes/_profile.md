@@ -2,8 +2,6 @@
 
 ## Target Roles
 - Software Engineer
-- Full Stack Developer
-- AI Engineeer
 
 ## Superpower / Unique Angle
 Experienced in Node, React, JavaScript, SQL, CI/CD and TDD principles. Proven collaboration with global, cross functional teams and delivering detailed, high quality work in a fast paced environment. I have the right to work in the UK.

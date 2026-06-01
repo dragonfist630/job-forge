@@ -439,5 +439,20 @@ body {
 
 .badge-visa { background: #d1fae5; color: #065f46; }
 
+.score-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.score-green { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+.score-amber { background: #fef9c3; color: #a16207; border: 1px solid #fde047; }
+.score-red   { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
+
 .btn-danger { background: #fee2e2 !important; color: #dc2626 !important; border-color: #fca5a5 !important; }
 .btn-danger:hover { background: #dc2626 !important; color: #fff !important; }

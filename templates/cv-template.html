@@ -54,7 +54,7 @@
 
   body {
     font-family: 'DM Sans', sans-serif;
-    font-size: 11px;
+    font-size: 10pt;
     line-height: 1.5;
     color: #1a1a2e;
     background: #ffffff;
@@ -76,7 +76,7 @@
 
   .header h1 {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 28px;
+    font-size: 22pt;
     font-weight: 700;
     color: #1a1a2e;
     letter-spacing: -0.02em;
@@ -86,7 +86,7 @@
 
   .header-role {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 14px;
+    font-size: 12pt;
     font-weight: 500;
     color: #555;
     margin-bottom: 6px;
@@ -105,7 +105,7 @@
     flex-wrap: wrap;
     gap: 8px 14px;
     font-family: 'DM Sans', sans-serif;
-    font-size: 10.5px;
+    font-size: 9pt;
     line-height: 1.4;
     color: #555;
   }
@@ -126,7 +126,7 @@
 
   .section-title {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 12px;
+    font-size: 10pt;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -139,7 +139,7 @@
 
   /* === PROFESSIONAL SUMMARY === */
   .summary-text {
-    font-size: 11px;
+    font-size: 10pt;
     line-height: 1.7;
     color: #2f2f2f;
   }
@@ -158,7 +158,7 @@
 
   .competency-tag {
     font-family: 'DM Sans', sans-serif;
-    font-size: 10px;
+    font-size: 9pt;
     font-weight: 500;
     color: hsl(187, 74%, 28%);
     background: hsl(187, 40%, 95%);
@@ -182,26 +182,26 @@
 
   .job-company {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 12.5px;
+    font-size: 11pt;
     font-weight: 600;
     color: hsl(270, 70%, 45%);
   }
 
   .job-period {
-    font-size: 10.5px;
+    font-size: 9pt;
     color: #777;
     white-space: nowrap;
   }
 
   .job-role {
-    font-size: 11px;
+    font-size: 11pt;
     font-weight: 600;
     color: #333;
     margin-bottom: 6px;
   }
 
   .job-location {
-    font-size: 10px;
+    font-size: 9pt;
     color: #888;
   }
 
@@ -211,7 +211,7 @@
   }
 
   .job li {
-    font-size: 10.5px;
+    font-size: 10pt;
     line-height: 1.6;
     color: #333;
     margin-bottom: 4px;
@@ -228,13 +228,13 @@
 
   .project-title {
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 11.5px;
+    font-size: 10.5pt;
     font-weight: 600;
     color: hsl(270, 70%, 45%);
   }
 
   .project-badge {
-    font-size: 9px;
+    font-size: 8pt;
     font-weight: 500;
     color: hsl(187, 74%, 32%);
     background: hsl(187, 40%, 95%);
@@ -244,14 +244,14 @@
   }
 
   .project-desc {
-    font-size: 10.5px;
+    font-size: 10pt;
     color: #444;
     margin-top: 3px;
     line-height: 1.55;
   }
 
   .project-tech {
-    font-size: 9.5px;
+    font-size: 8.5pt;
     color: #888;
     margin-top: 3px;
   }
@@ -270,7 +270,7 @@
 
   .edu-title {
     font-weight: 600;
-    font-size: 11px;
+    font-size: 10pt;
     color: #333;
   }
 
@@ -280,13 +280,13 @@
   }
 
   .edu-year {
-    font-size: 10px;
+    font-size: 9pt;
     color: #777;
     white-space: nowrap;
   }
 
   .edu-desc {
-    font-size: 10px;
+    font-size: 9pt;
     color: #666;
     margin-top: 2px;
     line-height: 1.5;
@@ -302,7 +302,7 @@
   }
 
   .cert-title {
-    font-size: 10.5px;
+    font-size: 9.5pt;
     font-weight: 500;
     color: #333;
   }
@@ -312,7 +312,7 @@
   }
 
   .cert-year {
-    font-size: 10px;
+    font-size: 9pt;
     color: #777;
     white-space: nowrap;
   }
@@ -325,14 +325,14 @@
   }
 
   .skill-item {
-    font-size: 10.5px;
+    font-size: 10pt;
     color: #444;
   }
 
   .skill-category {
     font-weight: 600;
     color: #333;
-    font-size: 10.5px;
+    font-size: 10pt;
   }
 
   /* === PRINT === */
@@ -366,17 +366,27 @@
     <h1>{{NAME}}</h1>
     <div class="header-role">{{TARGET_ROLE}}</div>
     <div class="header-gradient"></div>
-    <div class="contact-row">
-      <span>{{PHONE}}</span>
-      <span class="separator">|</span>
+    <div class="contact-row" id="contact-row">
+      <span id="cr-phone">{{PHONE}}</span>
+      <span class="separator" id="cr-sep-phone">|</span>
       <span>{{EMAIL}}</span>
       <span class="separator">|</span>
       <a href="{{LINKEDIN_URL}}">{{LINKEDIN_DISPLAY}}</a>
-      <span class="separator">|</span>
-      <a href="{{PORTFOLIO_URL}}">{{PORTFOLIO_DISPLAY}}</a>
-      <span class="separator">|</span>
-      <span>{{LOCATION}}</span>
+      <span class="separator" id="cr-sep-portfolio">|</span>
+      <a href="{{PORTFOLIO_URL}}" id="cr-portfolio">{{PORTFOLIO_DISPLAY}}</a>
+      <span class="separator" id="cr-sep-location">|</span>
+      <span id="cr-location">{{LOCATION}}</span>
     </div>
+    <script>
+      (function(){
+        var p=document.getElementById('cr-phone');
+        if(p&&!p.textContent.trim()){p.style.display='none';document.getElementById('cr-sep-phone').style.display='none';}
+        var pf=document.getElementById('cr-portfolio');
+        if(pf&&!pf.textContent.trim()){pf.style.display='none';document.getElementById('cr-sep-portfolio').style.display='none';}
+        var loc=document.getElementById('cr-location');
+        if(loc&&!loc.textContent.trim()){loc.style.display='none';document.getElementById('cr-sep-location').style.display='none';}
+      })();
+    </script>
   </div>
 
   <!-- PROFESSIONAL SUMMARY -->
@@ -411,11 +421,17 @@
     {{EDUCATION}}
   </div>
 
-  <!-- CERTIFICATIONS -->
-  <div class="section avoid-break">
+  <!-- CERTIFICATIONS (hidden when empty) -->
+  <div class="section avoid-break" id="cert-section">
     <div class="section-title">{{SECTION_CERTIFICATIONS}}</div>
     {{CERTIFICATIONS}}
   </div>
+  <script>
+    (function(){
+      var s=document.getElementById('cert-section');
+      if(s&&!s.querySelector('.cert-item'))s.style.display='none';
+    })();
+  </script>
 
   <!-- SKILLS -->
   <div class="section avoid-break">

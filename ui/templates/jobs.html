@@ -64,6 +64,12 @@
                 <p class="job-exp">{{ job.experience_required }} yrs exp</p>
                 {% endif %}
               </div>
+              {% if job.score is defined %}
+                {% set s = job.score %}
+                <span class="score-badge {% if s >= 7 %}score-green{% elif s >= 4 %}score-amber{% else %}score-red{% endif %}">
+                  ◆ {{ s }}/10
+                </span>
+              {% endif %}
               <a href="{{ job.job_link }}" target="_blank" class="btn btn-sm">View Job ↗</a>
               <button class="btn btn-sm btn-danger" onclick="deleteJob('{{ job.job_id }}', this)">Delete</button>
             </div>
@@ -191,6 +197,12 @@ function onScanDone(msg) {
   if (eventSource) { eventSource.close(); eventSource = null; }
 }
 
+function scoreBadgeHtml(score) {
+  if (score === undefined || score === null) return '';
+  const cls = score >= 7 ? 'score-green' : score >= 4 ? 'score-amber' : 'score-red';
+  return `<span class="score-badge ${cls}">◆ ${score}/10</span>`;
+}
+
 function appendJob(job) {
   const label = formatSession(job.scan_session);
   const container = getOrCreateSection(job.scan_session, label);
@@ -212,6 +224,7 @@ function appendJob(job) {
         <p class="job-company">${job.company} — <span class="job-location">${job.work_location}</span> ${badge}${visaBadge}</p>
         ${exp}
       </div>
+      ${scoreBadgeHtml(job.score)}
       <a href="${job.job_link}" target="_blank" class="btn btn-sm">View Job ↗</a>
       <button class="btn btn-sm btn-danger" onclick="deleteJob('${job.job_id}', this)">Delete</button>
     </div>
