@@ -480,11 +480,20 @@ def main():
             driver.quit()
             sys.exit(1)
 
+        first_search = True
         for term in search_terms:
             url = build_search_url(term, settings)
             emit_progress(f'Searching: "{term}"')
             driver.get(url)
             time.sleep(3)
+
+            # On first search: refresh once so the UK Visa Sponsor extension
+            # activates before scraping begins.
+            if first_search:
+                emit_progress("Refreshing page to activate extensions...")
+                driver.refresh()
+                time.sleep(3)
+                first_search = False
 
             # Detect session expiry / bot wall redirect
             cur = driver.current_url
