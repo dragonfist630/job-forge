@@ -69,23 +69,42 @@ def extract(force: bool = False) -> dict:
         if not cv_text.strip():
             return {}
 
-        claude_bin = shutil.which("claude")
-        if not claude_bin:
-            return {}
+        import os
+        if os.environ.get("JOBFORGE_DOCKER"):
+            import urllib.request as _ur, json as _j2
+            body = _j2.dumps({"system": _EXTRACTION_SYSTEM_PROMPT, "user": cv_text}).encode()
+            req = _ur.Request(
+                "http://host.docker.internal:7071",
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with _ur.urlopen(req, timeout=130) as r:
+                    res = _j2.loads(r.read())
+            except Exception:
+                return {}
+            if res.get("code", 1) != 0:
+                return {}
+            raw = res.get("out", "").strip()
+        else:
+            claude_bin = shutil.which("claude")
+            if not claude_bin:
+                return {}
 
-        result = subprocess.run(
-            [claude_bin, "--system-prompt", _EXTRACTION_SYSTEM_PROMPT, "-p"],
-            input=cv_text,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=120,
-        )
+            result = subprocess.run(
+                [claude_bin, "--system-prompt", _EXTRACTION_SYSTEM_PROMPT, "-p"],
+                input=cv_text,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=120,
+            )
 
-        if result.returncode != 0:
-            return {}
+            if result.returncode != 0:
+                return {}
+            raw = result.stdout.strip()
 
-        raw = result.stdout.strip()
         # Strip accidental markdown fences
         raw = re.sub(r"^```json?\s*", "", raw, flags=re.IGNORECASE)
         raw = re.sub(r"\s*```$", "", raw)

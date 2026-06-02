@@ -94,6 +94,12 @@ fi
 "$CHROME" "${CHROME_ARGS[@]}" &>/dev/null &
 sleep 2
 
+# ── Start Claude relay (bridges claude CLI from host to Docker) ──────────
+# claude binary is macOS-only; relay lets the container call it via HTTP
+pkill -f "claude_relay.py" 2>/dev/null || true
+python3 "$(pwd)/claude_relay.py" &>/dev/null &
+ok "Claude relay started (port 7071)"
+
 # ── Build + start Docker container ──────────────────────────
 info "Building and starting JobForge (first run takes a few minutes)..."
 docker compose up -d --build

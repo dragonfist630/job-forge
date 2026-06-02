@@ -626,11 +626,37 @@ def _slug(text: str, max_len: int = 30) -> str:
     return text[:max_len]
 
 
+def _call_claude_relay(system_prompt: str, user_message: str) -> str:
+    """Call claude via the host relay (Docker mode — claude binary is macOS-only)."""
+    import urllib.request
+    import json as _j
+    body = _j.dumps({"system": system_prompt, "user": user_message}).encode()
+    req = urllib.request.Request(
+        "http://host.docker.internal:7071",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=620) as r:
+            result = _j.loads(r.read())
+    except Exception as e:
+        raise RuntimeError(f"Claude relay unreachable: {e}. Make sure JobForge.command is running.")
+    if result.get("code", 1) != 0:
+        err = result.get("err") or f"claude exited {result.get('code')}"
+        raise RuntimeError(err)
+    return result.get("out", "").strip()
+
+
 def _call_claude_cli(system_prompt: str, user_message: str, proc_callback=None) -> str:
     """
     Run `claude -p` using Popen so callers can register the proc for stop support.
+    In Docker mode, delegates to the host relay instead (binary is macOS-only).
     proc_callback(proc) is called immediately after Popen, before communicate().
     """
+    if os.environ.get("JOBFORGE_DOCKER"):
+        return _call_claude_relay(system_prompt, user_message)
+
     claude_bin = shutil.which("claude")
     if not claude_bin:
         raise RuntimeError(
