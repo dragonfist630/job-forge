@@ -81,7 +81,15 @@ CHROME_ARGS=(
     --no-first-run
     --no-default-browser-check
 )
-[ -f "$EXT_UNPACKED/manifest.json" ] && CHROME_ARGS+=(--load-extension="$EXT_UNPACKED")
+# Only --load-extension if the extension isn't already installed in the profile.
+# Double-loading same extension ID causes Chrome to show it briefly then disable it.
+EXT_ID="nnflolggbaiokgdhfnlekkfaphooifcd"
+if [ -d "$CHROME_PROFILE/Default/Extensions/$EXT_ID" ]; then
+    info "UK Visa Sponsor extension already in profile — skipping --load-extension"
+elif [ -f "$EXT_UNPACKED/manifest.json" ]; then
+    CHROME_ARGS+=(--load-extension="$EXT_UNPACKED")
+    info "Loading UK Visa Sponsor extension via --load-extension"
+fi
 
 "$CHROME" "${CHROME_ARGS[@]}" &>/dev/null &
 sleep 2
