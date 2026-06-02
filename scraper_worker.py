@@ -568,6 +568,9 @@ def main():
                     )
                     next_btn.click()
                     time.sleep(3)
+                    emit_progress("Refreshing page to keep extension active...")
+                    driver.refresh()
+                    time.sleep(3)
                 except Exception:
                     break
 
