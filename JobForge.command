@@ -56,14 +56,34 @@ else
     info "Using fresh Chrome profile (log into LinkedIn when Chrome opens)"
 fi
 
+# Unpack UK Visa Sponsor extension (--load-extension needs a directory, not a CRX)
+EXT_CRX="$(pwd)/extensions/uk_visa_sponsor.crx"
+EXT_UNPACKED="$(pwd)/extensions/uk_visa_unpacked"
+if [ -f "$EXT_CRX" ] && [ ! -f "$EXT_UNPACKED/manifest.json" ]; then
+    python3 - <<PYEOF 2>/dev/null && info "UK Visa Sponsor extension ready" || info "Could not unpack extension (skipping)"
+import struct, zipfile, io, os
+data = open("$EXT_CRX", "rb").read()
+if data[:4] == b"Cr24" and struct.unpack_from("<I", data, 4)[0] == 3:
+    zip_start = 12 + struct.unpack_from("<I", data, 8)[0]
+else:
+    a, b = struct.unpack_from("<II", data, 8)
+    zip_start = 16 + a + b
+os.makedirs("$EXT_UNPACKED", exist_ok=True)
+zipfile.ZipFile(io.BytesIO(data[zip_start:])).extractall("$EXT_UNPACKED")
+PYEOF
+fi
+
 info "Starting Chrome (remote debugging mode)..."
-"$CHROME" \
-    --remote-debugging-port=9222 \
-    --remote-debugging-address=0.0.0.0 \
-    --user-data-dir="$CHROME_PROFILE" \
-    --no-first-run \
-    --no-default-browser-check \
-    &>/dev/null &
+CHROME_ARGS=(
+    --remote-debugging-port=9222
+    --remote-debugging-address=0.0.0.0
+    --user-data-dir="$CHROME_PROFILE"
+    --no-first-run
+    --no-default-browser-check
+)
+[ -f "$EXT_UNPACKED/manifest.json" ] && CHROME_ARGS+=(--load-extension="$EXT_UNPACKED")
+
+"$CHROME" "${CHROME_ARGS[@]}" &>/dev/null &
 sleep 2
 
 # ── Build + start Docker container ──────────────────────────
